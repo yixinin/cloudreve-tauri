@@ -1,7 +1,12 @@
-# Tauri + React + Typescript
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Cloudreve App
 
-## Recommended IDE Setup
+基于后端[Cloudreve](https://github.com/cloudreve/Cloudreve.git) V4版本开发
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+开发语言：Rust + Typescript
+
+GUI框架：[Tauri 2.0](https://tauri.app/)
+
+前端UI [React](https://react.dev/) + [MUI](https://mui.com/)
+
+欢迎贡献代码
