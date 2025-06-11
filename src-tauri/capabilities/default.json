@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Capability for the main window",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "iOS",
+    "android",
+    "windows"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default",
+    "fs:scope-desktop",
+    "store:default",
+    "app-events:default",
+    "fs:default"
+  ]
+}
