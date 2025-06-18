@@ -27,7 +27,6 @@ use proto::{
     AppError, JsonResult,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tauri_plugin_store::StoreExt;
 
 pub mod hc;
@@ -67,7 +66,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_login_data,
             get_network_settings,
             set_network_settings,
             prepare,
@@ -152,16 +150,20 @@ async fn set_network_settings(
 ) -> JsonResult<NetworkSettings> {
     if let Ok(store) = app.store("settings.json") {
         if let Some(value) = store.get("network") {
-            let mut settings = serde_json::from_value::<NetworkSettings>(value)?;
-            if let Some(addr) = addr {
-                settings.addr = addr;
+            if let Ok(mut settings) = serde_json::from_value::<NetworkSettings>(value) {
+                if let Some(addr) = addr {
+                    settings.addr = addr;
+                }
+                if let Some(addr6) = addr6 {
+                    settings.addr6 = addr6
+                }
+                if mode == NetworkMode::P2P {
+                    let _ = hc::h3::get_client(&settings.addr).await;
+                }
+                settings.mode = mode;
+                store.set("network", serde_json::json!(&settings));
+                return Ok(settings);
             }
-            if let Some(addr6) = addr6 {
-                settings.addr6 = addr6
-            }
-            settings.mode = mode;
-            store.set("network", serde_json::to_string(&settings)?);
-            return Ok(settings);
         }
 
         let settings = NetworkSettings {
@@ -169,7 +171,7 @@ async fn set_network_settings(
             addr6: addr6.unwrap_or_default(),
             mode: mode,
         };
-        store.set("network", serde_json::to_string(&settings)?);
+        store.set("network", serde_json::json!(&settings));
         return Ok(settings);
     }
     Err(AppError::Anyhow(anyhow::format_err!(
@@ -181,6 +183,10 @@ async fn get_network_settings(app: AppHandle) -> JsonResult<NetworkSettings> {
     if let Ok(store) = app.store("settings.json") {
         if let Some(value) = store.get("network") {
             let settings = serde_json::from_value::<NetworkSettings>(value)?;
+
+            if settings.mode == NetworkMode::P2P {
+                let _ = hc::h3::get_client(&settings.addr).await;
+            }
             return Ok(settings);
         }
     }
@@ -209,7 +215,7 @@ async fn login(
     let (address, version) = get_address(&app).await?;
     let ack = login::login(&address, &req.email, &req.password, version).await?;
     if let Ok(store) = app.store("app_data.json") {
-        let json_token = json!(ack.token);
+        let json_token = serde_json::json!(ack.token);
         store.set("token", json_token.clone());
     }
     return Ok(ack);
@@ -352,7 +358,7 @@ pub async fn get_token(app: &AppHandle) -> Result<Site> {
                         .await
                         {
                             Ok(token) => {
-                                let json_token = json!(token);
+                                let json_token = serde_json::json!(token);
                                 store.set("token", json_token.clone());
                                 return Ok(Site {
                                     token: token.access_token,

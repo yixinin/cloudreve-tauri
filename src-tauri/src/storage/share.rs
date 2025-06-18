@@ -54,7 +54,7 @@ pub async fn get_shares(site: &Site, order_direction: &str) -> Result<GetSharesA
         order_direction: order_direction.to_string(),
     };
     let ack = site
-        .build(Method::GET, "/share")
+        .build_query(Method::GET, "/share", req)
         .await?
         .send()
         .await?

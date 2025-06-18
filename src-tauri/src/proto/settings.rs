@@ -1,6 +1,8 @@
 use reqwest::Version;
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Serialize, Deserialize)]
+
+#[repr(u8)]
+#[derive(Debug, PartialEq, serde_repr::Serialize_repr, serde_repr::Deserialize_repr)]
 pub enum NetworkMode {
     Auto = 1,
     Normal = 2,

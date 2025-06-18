@@ -12,15 +12,21 @@ pub struct Site {
 
 impl Site {
     pub async fn build(&self, method: Method, path: &str) -> Result<reqwest::RequestBuilder> {
-        let (client, addr) = match self.version {
-            Version::HTTP_3 => h3::get_client(&self.addr).await?,
-            _ => (Arc::new(Client::new()), self.addr.clone()),
-        };
+        if self.version == Version::HTTP_3 {
+            if let Ok((client, addr)) = h3::get_client(&self.addr).await {
+                let url = url::get_api_url(&addr, path);
+                let builder = client
+                    .request(method, url)
+                    .version(Version::HTTP_3)
+                    .header("authorization", &self.token);
+                return Ok(builder);
+            }
+            println!("build h3 client fail, fall back to http");
+        }
 
-        let url = url::get_api_url(&addr, path);
-        let builder = client
+        let url = url::get_api_url(&self.addr, path);
+        let builder = Client::new()
             .request(method, url)
-            .version(self.version)
             .header("authorization", &self.token);
         Ok(builder)
     }
@@ -44,12 +50,20 @@ impl Site {
     where
         T: Serialize,
     {
-        let (client, addr) = match self.version {
-            Version::HTTP_3 => h3::get_client(&self.addr).await?,
-            _ => (Arc::new(Client::new()), self.addr.clone()),
-        };
-        let url = url::get_api_query_url(&addr, path, Some(req));
-        let builder = client
+        if self.version == Version::HTTP_3 {
+            if let Ok((client, addr)) = h3::get_client(&self.addr).await {
+                let url = url::get_api_query_url(&addr, path, Some(req));
+                let builder = client
+                    .request(method, url)
+                    .version(Version::HTTP_3)
+                    .header("authorization", &self.token);
+                return Ok(builder);
+            }
+            println!("build h3 client fail, fall back to http");
+        }
+
+        let url = url::get_api_query_url(&self.addr, path, Some(req));
+        let builder = Client::new()
             .request(method, url)
             .header("authorization", &self.token);
         Ok(builder)

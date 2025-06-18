@@ -104,7 +104,7 @@ export const setNetworkSettings = async (addr: string, addr6: string, mode: Netw
 }
 
 
-export const setNetworkMode = async (mode: NetworkMode): Promise<boolean> => {
+export const setNetworkSettingsMode = async (mode: NetworkMode): Promise<boolean> => {
     try {
         const ack = await invoke<boolean>('set_network_settings', { mode });
         return ack;

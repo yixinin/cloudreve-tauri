@@ -1,6 +1,5 @@
 // src-tauri/src/main.rs
 use chrono::{DateTime, Local};
-use image::{EncodableLayout, ImageFormat};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

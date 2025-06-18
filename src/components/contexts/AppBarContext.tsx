@@ -11,7 +11,7 @@ import {
     Recycling as TrashIcon,
 } from '@mui/icons-material';
 import { DownloadTask, UploadTask } from '../../services/upload';
-import { getLoginData, getUserSetting } from '../../services/userService';
+import { getNetworkSetting, NetworkMode } from '../../services/userService';
 
 interface AppBarContextType {
     filePageProps: FilePageProps;
@@ -22,8 +22,8 @@ interface AppBarContextType {
     setDownloads: (tasks: DownloadTask[]) => void;
     uploads: UploadTask[];
     setUploads: (tasks: UploadTask[]) => void;
-    siteAddr: string,
-    setSiteAddr: (addr: string) => void;
+    networkMode: NetworkMode,
+    setNetworkMode: (mode: NetworkMode) => void;
     siteAddrs: Addr[],
 }
 export const HomePath = 'cloudreve://my'
@@ -44,7 +44,7 @@ export interface searchProps {
 
 export interface Addr {
     addr: string,
-    kind: string,
+    mode: NetworkMode,
 }
 export const pagesItems: FilePageProps[] = [
     { currentPath: HomePath, name: '我的文件', icon: <HomeIcon />, rootPath: HomePath, category: '' },
@@ -64,35 +64,35 @@ export const AppBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const [searchProps, setSearchProps] = useState<searchProps>({ name: '' })
     const [downloads, setDownloads] = useState<DownloadTask[]>([]);
     const [uploads, setUploads] = useState<UploadTask[]>([]);
-    const [siteAddr, setSiteAddr] = useState<string>("");
+    const [networkMode, setNetworkMode] = useState<NetworkMode>(NetworkMode.Auto);
     const [siteAddrs, setSiteAddrs] = useState<Addr[]>([]);
 
 
     useEffect(() => {
         var loadSite = async () => {
-            const loginData = await getLoginData();
-            console.log('login data: ', loginData);
-
-            var addrs = [
-                { addr: '自动选择', kind: 'auto' },
-                { addr: loginData.addr, kind: 'ipv4' }]
-            if (loginData.ipv6 && loginData.addr6) {
+            const setting = await getNetworkSetting();
+            setNetworkMode(setting.mode);
+            var addrs: Addr[] = [{
+                mode: NetworkMode.Auto,
+                addr: "auto",
+            }];
+            if (setting.addr) {
                 addrs.push({
-                    addr: loginData.addr6,
-                    kind: 'ipv6',
+                    mode: NetworkMode.Normal,
+                    addr: setting.addr,
                 })
             }
-
-            setSiteAddrs(addrs)
-
-            const setting = await getUserSetting();
-            if (setting.force_ipv6 && loginData.addr6) {
-                setSiteAddr('ipv6')
-            } else if (setting.force_ipv4 && loginData.addr) {
-                setSiteAddr('ipv4')
-            } else {
-                setSiteAddr('auto')
+            if (setting.addr6) {
+                addrs.push({
+                    mode: NetworkMode.IPv6,
+                    addr: setting.addr6,
+                })
             }
+            addrs.push({
+                mode: NetworkMode.P2P,
+                addr: "p2p",
+            })
+            setSiteAddrs(addrs);
         }
         loadSite();
     }, [])
@@ -102,7 +102,7 @@ export const AppBarProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             searchProps, setSearchProps,
             downloads, setDownloads,
             uploads, setUploads,
-            siteAddr, setSiteAddr,
+            networkMode, setNetworkMode,
             siteAddrs,
         }}>
             {children}

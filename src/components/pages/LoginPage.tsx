@@ -2,10 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   Box,
   Button,
-  Checkbox,
   FormControl,
-  FormControlLabel,
-  Icon,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -16,17 +13,13 @@ import {
 } from "@mui/material";
 import { ArrowBack, Visibility, VisibilityOff } from "@mui/icons-material";
 import {
-  LoginData,
   userLogin,
-  NetworkSettings,
   NetworkMode,
   getNetworkSetting,
   setNetworkSettings,
 } from "../../services/userService";
 import { useAuth } from "../contexts/AuthContext";
 import { CodeError } from "../../services/proto";
-import { getURL } from "../../services/fileService";
-import { Form } from "react-router-dom";
 
 // 类型定义
 
@@ -42,9 +35,6 @@ const LoginPage: React.FC = () => {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
-    const addr = localStorage.getItem("addr") || "";
-    const mode = localStorage.getItem("network_mode") || NetworkMode.Auto;
-    const addr6 = localStorage.getItem("addr6") || "";
     const username = localStorage.getItem("user") || "";
     const pass = localStorage.getItem("pwd") || "";
 
@@ -54,6 +44,7 @@ const LoginPage: React.FC = () => {
         setAddr(settings.addr);
         setAddr6(settings.addr6);
         setNetworkMode(settings.mode);
+        setStep(1);
       } catch (error) {
         console.error("Failed to fetch network settings:", error);
       }
@@ -131,7 +122,7 @@ const LoginPage: React.FC = () => {
               value={addr6}
               onChange={(e) => setAddr6(e.target.value)}
             />
-            <FormControl>
+            <FormControl size="small" fullWidth>
               <Select
                 labelId="select-network-mode-label"
                 id="select-network-mode"
@@ -145,13 +136,20 @@ const LoginPage: React.FC = () => {
               </Select>
             </FormControl>
 
-            <Button onClick={handleNetworkSetting}>下一步</Button>
+            <Button
+              variant="contained"
+              onClick={handleNetworkSetting}
+              fullWidth
+              sx={{
+                marginTop: 2,
+              }}
+            >下一步</Button>
           </Box>
         )}
 
         {step === 1 && (
           <Box>
-            <IconButton>
+            <IconButton onClick={() => setStep(0)}>
               <ArrowBack />
             </IconButton>
             <TextField

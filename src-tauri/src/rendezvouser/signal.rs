@@ -47,7 +47,7 @@ impl SignalClient {
                     let req = AddrReq {
                         addr: pub_addr.to_string(),
                     };
-                    let remote_addr: String = client
+                    let response: String = client
                         .post(&self.signal_url)
                         .json(&req)
                         .send()
@@ -55,8 +55,14 @@ impl SignalClient {
                         .text()
                         .await?;
 
-                    let remote_addr = remote_addr.parse()?;
-                    return Ok((local_addr, pub_addr, remote_addr));
+                    match response.parse() {
+                        Ok(remote_addr) => {
+                            return Ok((local_addr, pub_addr, remote_addr));
+                        }
+                        Err(e) => {
+                            return Err(anyhow::format_err!("resp: {}, err: {}", response, e));
+                        }
+                    }
                 }
                 Err(e) => {
                     println!("get pub addr by {} fail: {}", stun_addr, e);

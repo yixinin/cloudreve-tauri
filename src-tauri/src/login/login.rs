@@ -45,18 +45,23 @@ pub async fn login(addr: &str, email: &str, pass: &str, version: Version) -> Res
         password: pass.to_string(),
     };
 
-    let resp = site
-        .build(Method::POST, "/session/token")
-        .await?
-        .json(&request)
-        .send()
-        .await?;
-    let ack = resp.json::<proto::Ack<LoginAck>>().await?;
-    if ack.code == 0 {
-        return Ok(ack.data.unwrap());
+    match site.build(Method::POST, "/session/token").await {
+        Ok(builder) => match builder.json(&request).send().await {
+            Ok(resp) => {
+                let ack = resp.json::<proto::Ack<LoginAck>>().await?;
+                if ack.code == 0 {
+                    return Ok(ack.data.unwrap());
+                }
+                return Err(AppError::Message(ack.code, ack.msg));
+            }
+            Err(e) => {
+                return Err(AppError::Anyhow(anyhow::format_err!("send error: {}", e)));
+            }
+        },
+        Err(e) => {
+            return Err(AppError::Anyhow(anyhow::format_err!("build error: {}", e)));
+        }
     }
-
-    Err(AppError::Message(ack.code, ack.msg))
 }
 
 pub async fn refresh_token(site: Site) -> Result<Token> {
