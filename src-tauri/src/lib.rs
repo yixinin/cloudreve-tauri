@@ -190,23 +190,6 @@ async fn get_network_settings(app: AppHandle) -> JsonResult<NetworkSettings> {
 }
 
 #[tauri::command]
-async fn get_login_data(app: AppHandle) -> Result<LoginReq> {
-    if let Ok(store) = app.store("app_data.json") {
-        match store.get("login") {
-            Some(value) => {
-                let data = serde_json::from_value::<LoginReq>(value)?;
-                return Ok(data);
-            }
-            None => {
-                return Err(AppError::Anyhow(anyhow::format_err!("login data is none")));
-            }
-        }
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
-}
-#[tauri::command]
 async fn prepare(app: AppHandle, username: String) -> JsonResult<proto::login::PrepareAck> {
     let (address, version) = get_address(&app).await?;
     let ack = login::prepare(&address, &username, version).await?;
@@ -221,11 +204,8 @@ async fn login(
 ) -> JsonResult<proto::login::LoginAck> {
     let req = LoginReq {
         email: username,
-        password: password,
+        password,
     };
-    if let Ok(store) = app.store("app_data.json") {
-        store.set("login", serde_json::to_string(&req)?)
-    }
     let (address, version) = get_address(&app).await?;
     let ack = login::login(&address, &req.email, &req.password, version).await?;
     if let Ok(store) = app.store("app_data.json") {
