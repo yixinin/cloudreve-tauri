@@ -4,9 +4,9 @@ use crate::proto::{
     self,
     share::{GetSharesAck, GetSharesReq, ShareInfo},
     storage::ShareReq,
-    Site,
 };
 
+use crate::hc::Site;
 use crate::proto::Result;
 
 pub async fn share_file(
@@ -31,7 +31,12 @@ pub async fn share_file(
     if expire > 0 {
         req.expire = Some(expire);
     }
-    let response = site.build(Method::PUT, "/share").json(&req).send().await?;
+    let response = site
+        .build(Method::PUT, "/share")
+        .await?
+        .json(&req)
+        .send()
+        .await?;
     let body = response.text().await?;
     println!("response: {}", &body);
 
@@ -50,6 +55,7 @@ pub async fn get_shares(site: &Site, order_direction: &str) -> Result<GetSharesA
     };
     let ack = site
         .build(Method::GET, "/share")
+        .await?
         .send()
         .await?
         .json::<proto::Ack<GetSharesAck>>()
@@ -64,6 +70,7 @@ pub async fn get_shares(site: &Site, order_direction: &str) -> Result<GetSharesA
 pub async fn delete_share(site: &Site, id: &str) -> Result<bool> {
     let ack = site
         .build(Method::DELETE, &format!("/share/{}", id))
+        .await?
         .send()
         .await?
         .json::<proto::Ack<String>>()
@@ -96,6 +103,7 @@ pub async fn update_share(
     }
     let ack = site
         .build(Method::POST, &format!("/share/{}", id))
+        .await?
         .json(&req)
         .send()
         .await?
@@ -114,6 +122,7 @@ pub async fn get_share_info(site: &Site, id: &str, owner_extended: bool) -> Resu
             Method::GET,
             &format!("/share/info/{}?owner_extended={}", id, owner_extended),
         )
+        .await?
         .send()
         .await?
         .json::<proto::Ack<ShareInfo>>()

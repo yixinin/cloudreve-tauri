@@ -7,8 +7,9 @@ use crate::proto::{
         BatchUrisReq, DeleteFileReq, FileDetailsInfo, FileSrouce, GetFileSourceReq, GetFilesAck,
         GetFilesReq, MoveReq, RenameReq, ShareReq,
     },
-    Site,
 };
+
+use crate::hc::Site;
 
 use crate::proto::Result;
 
@@ -16,6 +17,7 @@ pub async fn get_file_source(site: &Site, uris: Vec<String>) -> Result<FileSrouc
     let req = GetFileSourceReq { uris: uris };
     let ack = site
         .build(Method::PUT, "/file/source")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -35,6 +37,7 @@ pub async fn delete_lock(site: &Site, tokens: Vec<String>) -> Result<bool> {
     let req = DeleteTokenReq { tokens };
     let ack = site
         .build(Method::DELETE, "/file/token")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -51,6 +54,7 @@ pub async fn restore_file(site: &Site, uris: Vec<String>) -> Result<bool> {
     let req = BatchUrisReq { uris };
     let ack = site
         .build(Method::POST, "/file/restore")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -66,6 +70,7 @@ pub async fn restore_file(site: &Site, uris: Vec<String>) -> Result<bool> {
 pub async fn get_files(site: &Site, req: GetFilesReq) -> Result<GetFilesAck> {
     let ack = site
         .build_query(Method::GET, "/file", req)
+        .await?
         .send()
         .await?
         .json::<proto::Ack<GetFilesAck>>()
@@ -85,6 +90,7 @@ pub async fn move_file(site: &Site, uris: Vec<String>, dst: &str, copy: bool) ->
     };
     let ack = site
         .build(Method::POST, "/file/move")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -110,6 +116,7 @@ pub async fn delete_file(
     };
     let ack = site
         .build(Method::DELETE, "/file")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -135,6 +142,7 @@ pub async fn rename(site: &Site, name: String, uri: String) -> Result<FileDetail
     };
     let ack = site
         .build(Method::POST, "/file/rename")
+        .await?
         .json(&req)
         .send()
         .await?

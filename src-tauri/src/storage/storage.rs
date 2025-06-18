@@ -8,14 +8,16 @@ use crate::proto::{
         BatchUrisReq, BatchUrlsAck, CreateFileReq, FileDetailsInfo, FileInfo, GetCapacityAck,
         GetFileInfoReq, GetThumbURLAck, UploadSessionAck, UploadSessionReq,
     },
-    Site,
 };
+
+use crate::hc::Site;
 
 use crate::proto::Result;
 
 pub async fn get_capacity(site: &Site) -> Result<GetCapacityAck> {
     let ack = site
         .build(Method::GET, "/user/capacity")
+        .await?
         .send()
         .await?
         .json::<proto::Ack<GetCapacityAck>>()
@@ -31,6 +33,7 @@ pub async fn batch_urls(site: &Site, urls: Vec<String>) -> Result<BatchUrlsAck> 
     let req: BatchUrisReq = BatchUrisReq { uris: urls };
     let ack = site
         .build(Method::POST, "/file/url")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -46,6 +49,7 @@ pub async fn batch_urls(site: &Site, urls: Vec<String>) -> Result<BatchUrlsAck> 
 pub async fn get_thumb_url(site: &Site, uri: String) -> Result<String> {
     let ack = site
         .build(Method::GET, &format!("/file/thumb?uri={}", uri))
+        .await?
         .send()
         .await?
         .json::<proto::Ack<GetThumbURLAck>>()
@@ -65,6 +69,7 @@ pub async fn create_folder(site: &Site, uri: &str) -> Result<FileInfo> {
     };
     let ack = site
         .build(Method::POST, "/file/create")
+        .await?
         .json(&req)
         .send()
         .await?
@@ -84,6 +89,7 @@ pub async fn get_file_info(site: &Site, uri: &str) -> Result<FileDetailsInfo> {
     };
     let ack = site
         .build_query(Method::GET, "/file/info", req)
+        .await?
         .send()
         .await?
         .json::<proto::Ack<FileDetailsInfo>>()
@@ -116,6 +122,7 @@ pub async fn upload_file_session(
 
     let response = site
         .build(Method::PUT, "/file/upload")
+        .await?
         .json(&req)
         .send()
         .await?;

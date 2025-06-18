@@ -1,3 +1,4 @@
+use reqwest::Version;
 use std::{
     collections::{HashMap, HashSet},
     fmt::format,
@@ -7,15 +8,23 @@ use std::{
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::{net::has_ipv6_connectivity, proto::Result};
+use crate::{
+    net::has_ipv6_connectivity,
+    proto::{
+        login::LoginReq,
+        settings::{NetworkMode, NetworkSettings},
+        Result,
+    },
+};
 
 use chrono::Utc;
+use hc::Site;
 use proto::{
     file::DeleteFileAck,
     login::Token,
     share::{GetSharesAck, ShareInfo},
     storage::{Download, FileDetailsInfo, FileInfo, FileTag, GetFilesAck, GetFilesReq, Upload},
-    AppError, JsonResult, Site,
+    AppError, JsonResult,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -59,8 +68,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_login_data,
-            save_user_setting,
-            get_user_setting,
+            get_network_settings,
+            set_network_settings,
             prepare,
             login,
             logout,
@@ -92,75 +101,31 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginData {
-    pub addr: String,
-    pub ipv6: bool,
-    pub addr6: Option<String>,
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UserSetting {
-    pub force_ipv4: bool,
-    pub force_ipv6: bool,
-}
-async fn set_login_data(
-    app: &AppHandle,
-    addr: &str,
-    ipv6: bool,
-    addr6: &str,
-    username: &str,
-    password: &str,
-) -> JsonResult<bool> {
-    if let Ok(store) = app.store("app_data.json") {
-        let mut data = LoginData {
-            addr: addr.to_string(),
-            ipv6: ipv6,
-            addr6: None,
-            username: username.to_string(),
-            password: password.to_string(),
-        };
-        if !addr6.is_empty() {
-            data.addr6 = Some(addr6.to_string())
-        }
-        store.set("login", serde_json::json!(data));
-        return Ok(true);
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
-}
-
-async fn get_address(app: &AppHandle) -> Result<String> {
-    if let Ok(store) = app.store("app_data.json") {
-        match store.get("login") {
+async fn get_address(app: &AppHandle) -> Result<(String, Version)> {
+    if let Ok(store) = app.store("settings.json") {
+        match store.get("network") {
             Some(value) => {
-                let data = serde_json::from_value::<LoginData>(value)?;
-                if data.ipv6 {
-                    if let Some(addr6) = data.addr6 {
-                        if let Some(value) = store.get("user.setting") {
-                            let settings: UserSetting = serde_json::from_value(value)?;
-                            if settings.force_ipv6 {
-                                return Ok(gen_addr(&addr6));
-                            }
-                            if settings.force_ipv4 {
-                                return Ok(gen_addr(&data.addr));
-                            }
-                        }
-
-                        if let Some(value) = store.get("ipv6") {
-                            if let Some(ok) = value.as_bool() {
-                                if ok {
-                                    return Ok(gen_addr(&addr6));
-                                }
-                            }
+                let data = serde_json::from_value::<NetworkSettings>(value)?;
+                let version = data.get_http_version();
+                match data.mode {
+                    NetworkMode::Normal => {
+                        return Ok((gen_addr(&data.addr), version));
+                    }
+                    NetworkMode::IPv6 => {
+                        if !data.addr6.is_empty() {
+                            return Ok((gen_addr(&data.addr6), version));
                         }
                     }
+                    NetworkMode::P2P => {
+                        return Ok((gen_addr(&data.addr), version));
+                    }
+                    _ => {
+                        if !data.addr6.is_empty() && has_ipv6_connectivity() {
+                            return Ok((gen_addr(&data.addr6), version));
+                        }
+                        return Ok((gen_addr(&data.addr), version));
+                    }
                 }
-
-                return Ok(gen_addr(&data.addr));
             }
             None => {
                 return Err(AppError::Anyhow(anyhow::format_err!("address is none")));
@@ -178,17 +143,62 @@ fn gen_addr(addr: &str) -> String {
     }
     return format!("https://{}", addr);
 }
+#[tauri::command]
+async fn set_network_settings(
+    app: AppHandle,
+    addr: Option<String>,
+    addr6: Option<String>,
+    mode: NetworkMode,
+) -> JsonResult<NetworkSettings> {
+    if let Ok(store) = app.store("settings.json") {
+        if let Some(value) = store.get("network") {
+            let mut settings = serde_json::from_value::<NetworkSettings>(value)?;
+            if let Some(addr) = addr {
+                settings.addr = addr;
+            }
+            if let Some(addr6) = addr6 {
+                settings.addr6 = addr6
+            }
+            settings.mode = mode;
+            store.set("network", serde_json::to_string(&settings)?);
+            return Ok(settings);
+        }
+
+        let settings = NetworkSettings {
+            addr: addr.unwrap_or_default(),
+            addr6: addr6.unwrap_or_default(),
+            mode: mode,
+        };
+        store.set("network", serde_json::to_string(&settings)?);
+        return Ok(settings);
+    }
+    Err(AppError::Anyhow(anyhow::format_err!(
+        "cannot access app data"
+    )))
+}
+#[tauri::command]
+async fn get_network_settings(app: AppHandle) -> JsonResult<NetworkSettings> {
+    if let Ok(store) = app.store("settings.json") {
+        if let Some(value) = store.get("network") {
+            let settings = serde_json::from_value::<NetworkSettings>(value)?;
+            return Ok(settings);
+        }
+    }
+    Err(AppError::Anyhow(anyhow::format_err!(
+        "cannot access app data"
+    )))
+}
 
 #[tauri::command]
-async fn get_login_data(app: AppHandle) -> Result<LoginData> {
+async fn get_login_data(app: AppHandle) -> Result<LoginReq> {
     if let Ok(store) = app.store("app_data.json") {
         match store.get("login") {
             Some(value) => {
-                let data = serde_json::from_value::<LoginData>(value)?;
+                let data = serde_json::from_value::<LoginReq>(value)?;
                 return Ok(data);
             }
             None => {
-                return Err(AppError::Anyhow(anyhow::format_err!("address is none")));
+                return Err(AppError::Anyhow(anyhow::format_err!("login data is none")));
             }
         }
     }
@@ -197,87 +207,27 @@ async fn get_login_data(app: AppHandle) -> Result<LoginData> {
     )))
 }
 #[tauri::command]
-async fn save_user_setting(
-    app: AppHandle,
-    force_ipv4: Option<bool>,
-    force_ipv6: Option<bool>,
-) -> JsonResult<bool> {
-    if let Ok(store) = app.store("app_data.json") {
-        match store.get("user.setting") {
-            Some(value) => {
-                let mut settings: UserSetting = serde_json::from_value(value)?;
-                if let Some(ok) = force_ipv4 {
-                    settings.force_ipv4 = ok;
-                }
-                if let Some(ok) = force_ipv6 {
-                    settings.force_ipv6 = ok
-                }
-                store.set("user.setting", serde_json::json!(settings));
-            }
-            None => {
-                let settings = UserSetting {
-                    force_ipv4: force_ipv4.unwrap_or_default(),
-                    force_ipv6: force_ipv6.unwrap_or_default(),
-                };
-                store.set("user.setting", serde_json::json!(settings));
-            }
-        }
-        Ok(true)
-    } else {
-        Err(AppError::Anyhow(anyhow::format_err!(
-            "cannot access app data"
-        )))
-    }
-}
-#[tauri::command]
-async fn get_user_setting(app: AppHandle) -> JsonResult<UserSetting> {
-    if let Ok(store) = app.store("app_data.json") {
-        match store.get("user.setting") {
-            Some(value) => {
-                let settings: UserSetting = serde_json::from_value(value)?;
-                return Ok(settings);
-            }
-            None => {
-                return Ok(UserSetting {
-                    force_ipv4: false,
-                    force_ipv6: false,
-                });
-            }
-        }
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
-}
-#[tauri::command]
-async fn prepare(
-    app: AppHandle,
-    addr: String,
-    username: String,
-) -> JsonResult<proto::login::PrepareAck> {
-    let address: String;
-    if !addr.starts_with("http") {
-        address = format!("https://{}", &addr);
-    } else {
-        address = addr;
-    }
-    let ack = login::prepare(&address, &username).await?;
+async fn prepare(app: AppHandle, username: String) -> JsonResult<proto::login::PrepareAck> {
+    let (address, version) = get_address(&app).await?;
+    let ack = login::prepare(&address, &username, version).await?;
     Ok(ack)
 }
 
 #[tauri::command]
 async fn login(
     app: AppHandle,
-    addr: String,
-    ipv6: bool,
-    addr6: String,
     username: String,
     password: String,
 ) -> JsonResult<proto::login::LoginAck> {
-    println!("{}", &addr6);
-    set_login_data(&app, &addr, ipv6, &addr6, &username, &password).await?;
-    let address = get_address(&app).await?;
-    let ack = login::login(&address, &username, &password).await?;
+    let req = LoginReq {
+        email: username,
+        password: password,
+    };
+    if let Ok(store) = app.store("app_data.json") {
+        store.set("login", serde_json::to_string(&req)?)
+    }
+    let (address, version) = get_address(&app).await?;
+    let ack = login::login(&address, &req.email, &req.password, version).await?;
     if let Ok(store) = app.store("app_data.json") {
         let json_token = json!(ack.token);
         store.set("token", json_token.clone());
@@ -397,7 +347,7 @@ async fn get_thumb_url(app: AppHandle, uri: String) -> JsonResult<String> {
 pub async fn get_token(app: &AppHandle) -> Result<Site> {
     let now = Utc::now();
     let store = app.store("app_data.json").unwrap();
-    let addr = get_address(app).await?;
+    let (addr, http_version) = get_address(app).await?;
     if addr.is_empty() {
         return Err(AppError::Unauthorized);
     }
@@ -409,6 +359,7 @@ pub async fn get_token(app: &AppHandle) -> Result<Site> {
                         return Ok(Site {
                             token: token.access_token,
                             addr,
+                            version: http_version,
                         });
                     }
 
@@ -416,6 +367,7 @@ pub async fn get_token(app: &AppHandle) -> Result<Site> {
                         match login::refresh_token(Site {
                             token: token.refresh_token,
                             addr: addr.clone(),
+                            version: http_version,
                         })
                         .await
                         {
@@ -425,6 +377,7 @@ pub async fn get_token(app: &AppHandle) -> Result<Site> {
                                 return Ok(Site {
                                     token: token.access_token,
                                     addr,
+                                    version: http_version,
                                 });
                             }
                             Err(err) => {
@@ -517,6 +470,19 @@ fn get_downloads_dir(app: &AppHandle) -> Result<String> {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+fn get_downloads_dir(app: &AppHandle) -> Result<String> {
+    match app.path().download_dir() {
+        Ok(dir) => {
+            return Ok(dir.to_string_lossy().to_string());
+        }
+        Err(err) => {
+            return Err(AppError::Anyhow(err.into()));
+        }
+    }
+}
+
 #[cfg(target_os = "android")]
 fn get_downloads_dir(app: &AppHandle) -> Result<String> {
     match app.path().home_dir() {
@@ -611,7 +577,7 @@ async fn pre_upload(app: AppHandle, target_path: String, policy_id: String) -> J
                 uri: uri.clone(),
                 upload_url: format!(
                     "{}/{}/0",
-                    proto::get_api_url(&site.addr, "/file/upload"),
+                    hc::url::get_api_url(&site.addr, "/file/upload"),
                     ack.session_id
                 ),
             };

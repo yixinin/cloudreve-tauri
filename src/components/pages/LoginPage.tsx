@@ -11,7 +11,7 @@ import {
     Typography
 } from '@mui/material';
 import { Visibility, VisibilityOff } from '@mui/icons-material';
-import { LoginData, userLogin } from '../../services/userService';
+import { LoginData, userLogin, NetworkSettings, NetworkMode } from '../../services/userService';
 import { useAuth } from '../contexts/AuthContext';
 import { CodeError } from '../../services/proto';
 
@@ -22,9 +22,6 @@ const LoginPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [showPassword, setShowPassword] = useState(false);
     const [loginData, setLoginData] = useState<LoginData>({
-        addr: '',
-        ipv6: false,
-        addr6: '',
         username: '',
         password: '',
     });
@@ -36,14 +33,11 @@ const LoginPage: React.FC = () => {
 
     useEffect(() => {
         const addr = localStorage.getItem('addr') || '';
-        const useIPv6 = (localStorage.getItem('ipv6') || '0') === '1';
-        const ipv6Address = localStorage.getItem('addr6') || '';
+        const networkMode = localStorage.getItem('network_mode') || NetworkMode.Auto;
+        const addr6 = localStorage.getItem('addr6') || '';
         const username = localStorage.getItem('user') || '';
         const pass = localStorage.getItem("pwd") || '';
         setLoginData({
-            addr: addr,
-            ipv6: useIPv6,
-            addr6: ipv6Address,
             username: username,
             password: pass,
         })
@@ -57,7 +51,7 @@ const LoginPage: React.FC = () => {
     const handleLogin = async () => {
         try {
             console.log(loginData);
-            const ack = await userLogin(loginData.addr, loginData.ipv6, loginData.addr6, loginData.username, loginData.password);
+            const ack = await userLogin(loginData.username, loginData.password);
             localStorage.setItem("pwd", loginData.password);
             login(ack);
         }
