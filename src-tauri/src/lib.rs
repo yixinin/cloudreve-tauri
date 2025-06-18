@@ -21,10 +21,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri_plugin_store::StoreExt;
 
+pub mod hc;
 pub mod login;
 pub mod media;
 pub mod net;
 pub mod proto;
+pub mod rendezvouser;
 pub mod storage;
 pub mod transfer;
 

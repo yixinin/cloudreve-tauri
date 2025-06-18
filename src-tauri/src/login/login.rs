@@ -1,6 +1,6 @@
 use std::fmt::format;
 
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, StatusCode, Version};
 
 use crate::proto::{
     self,
@@ -29,15 +29,17 @@ pub async fn prepare(addr: &str, email: &str) -> Result<PrepareAck> {
 }
 
 pub async fn login(addr: &str, email: &str, pass: &str) -> Result<LoginAck> {
-    let client = Client::new();
+    let (client, addr) = proto::get_h3_client(addr).await?;
     let request = LoginReq {
         email: email.to_string(),
         password: pass.to_string(),
     };
 
+    let url = proto::get_api_url(&addr, "/session/token");
     // 这里替换为你的实际API地址
     let resp = client
-        .post(proto::get_api_url(addr, "/session/token"))
+        .post(url)
+        .version(Version::HTTP_3)
         .json(&request)
         .send()
         .await?;
