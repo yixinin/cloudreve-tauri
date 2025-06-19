@@ -38,7 +38,21 @@ impl SignalClient {
         }
     }
 
-    pub async fn get(&self) -> Result<(SocketAddr, SocketAddr, SocketAddr)> {
+    pub async fn get_local_pub_addr(&self) -> Result<(SocketAddr, SocketAddr)> {
+        for stun_addr in &self.stun_addrs {
+            match self.get_pub_addr(stun_addr).await {
+                Ok((local_addr, pub_addr)) => {
+                    return Ok((local_addr, pub_addr));
+                }
+                Err(e) => {
+                    println!("get pub addr by {} fail: {}", stun_addr, e);
+                }
+            }
+        }
+        return Err(anyhow::format_err!("get all pub addr fail"));
+    }
+
+    pub async fn get_remote_addr(&self) -> Result<(SocketAddr, SocketAddr, SocketAddr)> {
         for stun_addr in &self.stun_addrs {
             match self.get_pub_addr(stun_addr).await {
                 Ok((local_addr, pub_addr)) => {

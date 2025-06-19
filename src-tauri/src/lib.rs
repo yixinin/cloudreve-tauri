@@ -29,6 +29,7 @@ use proto::{
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
 
+pub mod client;
 pub mod hc;
 pub mod login;
 pub mod media;
@@ -141,6 +142,7 @@ fn gen_addr(addr: &str) -> String {
     }
     return format!("https://{}", addr);
 }
+
 #[tauri::command]
 async fn set_network_settings(
     app: AppHandle,

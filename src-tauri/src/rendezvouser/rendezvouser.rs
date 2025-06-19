@@ -28,6 +28,7 @@ pub async fn simple_udp_hole_punching(
 ) -> Result<()> {
     let socket = tokio::net::UdpSocket::bind(local_addr).await?;
 
-    socket.send_to(b"PUNCH", remote_addr).await?;
+    let _ = socket.send_to(b"PUNCH", remote_addr).await?;
+    // println!("send punch to remote: {}", remote_addr);
     Ok(())
 }

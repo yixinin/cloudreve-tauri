@@ -13,15 +13,19 @@ pub struct Site {
 impl Site {
     pub async fn build(&self, method: Method, path: &str) -> Result<reqwest::RequestBuilder> {
         if self.version == Version::HTTP_3 {
-            if let Ok((client, addr)) = h3::get_client(&self.addr).await {
-                let url = url::get_api_url(&addr, path);
-                let builder = client
-                    .request(method, url)
-                    .version(Version::HTTP_3)
-                    .header("authorization", &self.token);
-                return Ok(builder);
+            match h3::get_client(&self.addr).await {
+                Ok((client, addr)) => {
+                    let url = url::get_api_url(&addr, path);
+                    let builder = client
+                        .request(method, url)
+                        .version(Version::HTTP_3)
+                        .header("authorization", &self.token);
+                    return Ok(builder);
+                }
+                Err(e) => {
+                    println!("build h3 client fail: {}, fall back to http", e);
+                }
             }
-            println!("build h3 client fail, fall back to http");
         }
 
         let url = url::get_api_url(&self.addr, path);
@@ -51,15 +55,19 @@ impl Site {
         T: Serialize,
     {
         if self.version == Version::HTTP_3 {
-            if let Ok((client, addr)) = h3::get_client(&self.addr).await {
-                let url = url::get_api_query_url(&addr, path, Some(req));
-                let builder = client
-                    .request(method, url)
-                    .version(Version::HTTP_3)
-                    .header("authorization", &self.token);
-                return Ok(builder);
+            match h3::get_client(&self.addr).await {
+                Ok((client, addr)) => {
+                    let url = url::get_api_query_url(&addr, path, Some(req));
+                    let builder = client
+                        .request(method, url)
+                        .version(Version::HTTP_3)
+                        .header("authorization", &self.token);
+                    return Ok(builder);
+                }
+                Err(e) => {
+                    println!("build h3 client fail: {}, fall back to http", e);
+                }
             }
-            println!("build h3 client fail, fall back to http");
         }
 
         let url = url::get_api_query_url(&self.addr, path, Some(req));
