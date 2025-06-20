@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
-use reqwest::Request;
-
-pub struct Client {
-    h3_pool: HashMap<String, Request::Client>,
-}
+pub mod client;
+pub mod http3;
+pub mod pool;
+pub mod url;
