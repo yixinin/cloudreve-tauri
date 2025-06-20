@@ -1,3 +1,4 @@
+use serde::Serialize;
 
 pub fn get_api_query_url<T>(addr: &str, path: &str, query: Option<T>) -> String
 where
