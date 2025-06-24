@@ -95,8 +95,8 @@ impl SignalClient {
         local_port: Option<u16>,
     ) -> Result<(SocketAddr, SocketAddr)> {
         let laddr: SocketAddr = match local_port {
-            Some(port) => format!("0.0.0.0:{}", port),
-            None => "0.0.0.0:0".to_string(),
+            Some(port) => format!("0.0.0.0:{}", port).parse()?,
+            None => "0.0.0.0:0".to_string().parse()?,
         };
         let socket = tokio::net::UdpSocket::bind(laddr).await?;
         let local_addr = socket.local_addr()?;

@@ -1,4 +1,3 @@
-use client::client::Client;
 use reqwest::Version;
 use std::{
     collections::{HashMap, HashSet},
@@ -42,8 +41,6 @@ pub mod proto;
 pub mod rendezvouser;
 pub mod storage;
 pub mod transfer;
-
-static CLIENT: OnceLock<Client> = OnceLock::new();
 
 static IDGEN: AtomicU32 = AtomicU32::new(0);
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -187,7 +184,7 @@ async fn set_network_settings(
     )))
 }
 #[tauri::command]
-async fn get_network_settings(app: &AppHandle) -> JsonResult<NetworkSettings> {
+async fn get_network_settings(app: AppHandle) -> JsonResult<NetworkSettings> {
     if let Ok(store) = app.store("settings.json") {
         if let Some(value) = store.get("network") {
             let settings = serde_json::from_value::<NetworkSettings>(value)?;
@@ -220,20 +217,12 @@ async fn login(
         email: username,
         password,
     };
-    let network_settings = get_network_settings(&app).await?;
-
     let (address, version) = get_address(&app).await?;
     let ack = login::login(&address, &req.email, &req.password, version).await?;
     if let Ok(store) = app.store("app_data.json") {
         let json_token = serde_json::json!(ack.token);
         store.set("token", json_token.clone());
     }
-    CLIENT.set(Client::new(
-        &network_settings.addr,
-        &network_settings.addr6,
-        &format!("{}/api/v4/p2p/signal", &settings.addr),
-        ack.token,
-    ));
     return Ok(ack);
 }
 
@@ -264,10 +253,6 @@ async fn get_files(
     order_by: String,
     order: String,
 ) -> JsonResult<GetFilesAck> {
-    let client = CLIENT
-        .wait()
-        .get_files(page, page_size, order_by, order)
-        .await?;
     let uri: String;
     if !category.is_empty() {
         uri = format!("{}?category={}", path, category);
