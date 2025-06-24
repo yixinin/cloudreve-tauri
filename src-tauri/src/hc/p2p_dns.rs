@@ -7,12 +7,17 @@ use std::net::SocketAddr;
 pub struct P2PResolver {
     schema: String,
     uri: String,
-    local_port: u16,
+    local_port: Option<u16>,
     stun_addrs: Option<Vec<String>>,
 }
 
 impl P2PResolver {
-    pub fn new(schema: &str, uri: &str, local_port: u16, stun_addrs: Option<Vec<String>>) -> Self {
+    pub fn new(
+        schema: &str,
+        uri: &str,
+        local_port: Option<u16>,
+        stun_addrs: Option<Vec<String>>,
+    ) -> Self {
         Self {
             schema: schema.to_string(),
             uri: uri.to_string(),
@@ -32,8 +37,8 @@ impl Resolve for P2PResolver {
             // {https://}{A.B.C}{/api/v4/p2p/signal}
             let url = format!("{}{}{}", schema, name.as_str(), uri);
             let client = rendezvouser::SignalClient::new(&url, stun_addrs);
-            let (local_addr, _, remote_addr) = client.get_remote_addr(Some(local_port)).await?;
-            rendezvouser::simple_udp_hole_punching(local_addr, remote_addr).await;
+            let (local_addr, _, remote_addr) = client.get_remote_addr(local_port).await?;
+            rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr);
             let addrs: Addrs = Box::new(SocketAddrs {
                 iter: vec![remote_addr].into_iter(),
             });

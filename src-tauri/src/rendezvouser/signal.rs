@@ -98,7 +98,14 @@ impl SignalClient {
             Some(port) => format!("0.0.0.0:{}", port).parse()?,
             None => "0.0.0.0:0".to_string().parse()?,
         };
-        let socket = tokio::net::UdpSocket::bind(laddr).await?;
+
+        let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
+        socket.set_reuse_address(true)?;
+        socket.set_reuse_port(true)?;
+        socket.set_nonblocking(true)?;
+        socket.bind(&laddr.into())?;
+
+        let socket = tokio::net::UdpSocket::from_std(socket.into())?;
         let local_addr = socket.local_addr()?;
         let raddr = stun_addr.to_socket_addrs()?.next();
         if let Some(raddr) = raddr {
