@@ -1,28 +1,28 @@
 use anyhow::Result;
 use std::{
     collections::HashSet,
+    net::UdpSocket,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
 use reqwest::Client;
 
-static H3_ADDR: OnceLock<Arc<HashSet<String>>> = OnceLock::new();
+pub async fn get_client(addr: &str) -> Result<Client> {
+    let schema = http::Uri::from(addr).scheme_str().unwrap();
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    let local_port = socket.local_addr()?.port();
+    drop(socket);
 
-pub async fn get_client(addr: &str) -> Result<(Client, String)> {
+    let dns_resolver = super::p2p_dns::P2PResolver::new(schema, "/api/v4/p2p/signal", local_port);
     let builder = reqwest::ClientBuilder::new()
         .http3_prior_knowledge()
         .http3_keep_alive_interval(Duration::from_secs(15))
         .tls_early_data(true)
         .http3_max_idle_timeout(Duration::from_secs(3600))
+        .http3_local_port(local_port)
+        .dns_resolver(Arc::new(dns_resolver))
         .danger_accept_invalid_certs(true);
-    let connector = super::quic::p2p_quinn::H3QuinnConnector::new(
-        &format!("{}/api/v4/p2p/signal", addr),
-        None,
-        tls,
-        tp,
-        c_cfg,
-    )?;
-    let client = builder.build_h3_with_connector(connector)?;
-    Ok((client, format!("https://{}", remote_addr.to_string())))
+
+    builder.build()
 }

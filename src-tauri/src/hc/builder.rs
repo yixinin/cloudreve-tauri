@@ -14,8 +14,8 @@ impl Site {
     pub async fn build(&self, method: Method, path: &str) -> Result<reqwest::RequestBuilder> {
         if self.version == Version::HTTP_3 {
             match h3::get_client(&self.addr).await {
-                Ok((client, addr)) => {
-                    let url = url::get_api_url(&addr, path);
+                Ok(client) => {
+                    let url = url::get_api_url(&self.addr, path);
                     let builder = client
                         .request(method, url)
                         .version(Version::HTTP_3)

@@ -34,7 +34,6 @@ use proto::{
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
 
-pub mod client;
 pub mod hc;
 pub mod login;
 pub mod media;

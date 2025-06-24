@@ -40,7 +40,7 @@ impl SignalClient {
 
     pub async fn get_local_pub_addr(&self) -> Result<(SocketAddr, SocketAddr)> {
         for stun_addr in &self.stun_addrs {
-            match self.get_pub_addr(stun_addr).await {
+            match self.get_pub_addr(stun_addr, None).await {
                 Ok((local_addr, pub_addr)) => {
                     return Ok((local_addr, pub_addr));
                 }
@@ -52,9 +52,12 @@ impl SignalClient {
         return Err(anyhow::format_err!("get all pub addr fail"));
     }
 
-    pub async fn get_remote_addr(&self) -> Result<(SocketAddr, SocketAddr, SocketAddr)> {
+    pub async fn get_remote_addr(
+        &self,
+        local_port: Option<u16>,
+    ) -> Result<(SocketAddr, SocketAddr, SocketAddr)> {
         for stun_addr in &self.stun_addrs {
-            match self.get_pub_addr(stun_addr).await {
+            match self.get_pub_addr(stun_addr, local_port).await {
                 Ok((local_addr, pub_addr)) => {
                     let client = reqwest::Client::new();
 
@@ -86,8 +89,15 @@ impl SignalClient {
         return Err(anyhow::format_err!("get all pub addr fail"));
     }
 
-    pub async fn get_pub_addr(&self, stun_addr: &str) -> Result<(SocketAddr, SocketAddr)> {
-        let laddr: SocketAddr = "0.0.0.0:0".parse()?;
+    pub async fn get_pub_addr(
+        &self,
+        stun_addr: &str,
+        local_port: Option<u16>,
+    ) -> Result<(SocketAddr, SocketAddr)> {
+        let laddr: SocketAddr = match local_port {
+            Some(port) => format!("0.0.0.0:{}", port),
+            None => "0.0.0.0:0".to_string(),
+        };
         let socket = tokio::net::UdpSocket::bind(laddr).await?;
         let local_addr = socket.local_addr()?;
         let raddr = stun_addr.to_socket_addrs()?.next();
