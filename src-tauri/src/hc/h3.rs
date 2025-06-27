@@ -8,7 +8,7 @@ use std::{
 
 use reqwest::Client;
 
-pub async fn get_client(addr: &str) -> Result<Client> {
+pub fn get_client(addr: &str) -> Result<Client> {
     let uri: http::Uri = addr.parse()?;
     let schema = uri.scheme_str().unwrap_or("https://");
     // let socket = UdpSocket::bind("0.0.0.0:0")?;

@@ -1,82 +1,71 @@
-use anyhow::Result;
+use arc_swap::ArcSwap;
 use reqwest::Client;
-use reqwest::Version;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use tokio::sync::Semaphore;
 
-/// HTTP客户端对象池
-#[derive(Clone)]
-pub struct HttpClientPool {
-    addr: String,
-    clients: Arc<Mutex<Vec<Client>>>,
-    semaphore: Arc<Semaphore>, // 控制最大并发数
+use crate::hc::h3;
+
+/// 线程安全的 Client 对象池
+#[derive(Debug)]
+pub struct ClientPool {
+    pool: Arc<Mutex<VecDeque<Client>>>,
+    max_size: usize,
 }
 
-impl HttpClientPool {
+impl ClientPool {
     /// 创建新对象池
-    /// - `max_size`: 池中最大客户端数量
-    /// - `idle_connections`: 每个主机最大空闲连接数
-    pub fn new(addr: &str, max_size: usize, idle_connections: usize) -> Self {
-        HttpClientPool {
-            addr: addr.to_string(),
-            clients: Arc::new(Mutex::new(Vec::with_capacity(max_size))),
-            semaphore: Arc::new(Semaphore::new(max_size)),
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            pool: Arc::new(Mutex::new(VecDeque::with_capacity(max_size))),
+            max_size,
         }
     }
 
-    /// 从池中获取客户端 (非阻塞)
-    pub async fn get_client(&self, version: Version) -> Result<HttpClientGuard<'_>> {
-        let permit = self.semaphore.acquire().await.expect("Semaphore closed");
-
-        // 尝试从池中获取空闲客户端
-        if let Some(client) = self.clients.lock().unwrap().pop() {
-            return Ok(HttpClientGuard {
-                client: Some(client),
-                pool: &self.clone(),
-                _permit: permit,
-            });
+    /// 从池中获取 Client（若池空则新建）
+    pub fn get(&self, addr: &str, p2p: bool) -> Option<Client> {
+        let mut pool = self.pool.lock().unwrap();
+        if let Some(client) = pool.pop_front() {
+            Some(client)
+        } else {
+            Self::create_client(addr, p2p)
         }
-        let client = match version {
-            Version::HTTP_3 => super::h3::get_client(&self.addr).await?,
-            _ => Client::builder().build()?,
-        };
-        // 池为空时创建新客户端
-        Ok(HttpClientGuard {
-            client: Some(client),
-            pool: &self.clone(),
-            _permit: permit,
-        })
     }
 
-    // 内部方法：归还客户端到池
-    fn return_client(&self, client: Client) {
-        let mut pool = self.clients.lock().unwrap();
-        if pool.len() < self.semaphore.available_permits() {
-            pool.push(client);
+    /// 归还 Client 到池中
+    pub fn put(&self, client: Client) {
+        let mut pool = self.pool.lock().unwrap();
+        if pool.len() < self.max_size {
+            pool.push_back(client);
         }
-        // 若池已满则丢弃客户端
+        // 若池满，Client 会被自动丢弃（触发连接关闭）
+    }
+
+    /// 创建新 Client（复用配置）
+    fn create_client(addr: &str, p2p: bool) -> Option<Client> {
+        if !p2p {
+            return Client::builder()
+                .pool_max_idle_per_host(20) // 优化连接复用[1,6](@ref)
+                .timeout(std::time::Duration::from_secs(10))
+                .tcp_keepalive(std::time::Duration::from_secs(60))
+                .build()
+                .ok();
+        }
+        return h3::get_client(addr).ok();
     }
 }
 
-/// 客户端守护对象，自动归还机制
-pub struct HttpClientGuard<'a> {
-    client: Option<Client>,
-    pool: &'a HttpClientPool,
-    _permit: tokio::sync::SemaphorePermit<'a>,
+/// 全局静态对象池（线程安全）
+lazy_static::lazy_static! {
+    static ref CLIENT_POOL: ArcSwap<ClientPool> =
+        ArcSwap::from(Arc::new(ClientPool::new(20)));  // 默认池大小20
 }
 
-impl HttpClientGuard<'_> {
-    /// 获取内部Client引用
-    pub fn client(&self) -> &Client {
-        self.client.as_ref().unwrap()
-    }
+/// 从全局池获取 Client
+pub fn acquire_client(addr: &str, p2p: bool) -> Option<Client> {
+    CLIENT_POOL.load().get(addr, p2p)
 }
 
-// 自动归还客户端到池
-impl Drop for HttpClientGuard<'_> {
-    fn drop(&mut self) {
-        if let Some(client) = self.client.take() {
-            self.pool.return_client(client);
-        }
-    }
+/// 归还 Client 到全局池
+pub fn release_client(client: Client) {
+    CLIENT_POOL.load().put(client);
 }
