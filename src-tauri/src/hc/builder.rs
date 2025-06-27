@@ -13,7 +13,7 @@ pub struct Site {
 impl Site {
     pub async fn build(&self, method: Method, path: &str) -> Result<reqwest::RequestBuilder> {
         if self.version == Version::HTTP_3 {
-            match h3::get_client(&self.addr).await {
+            match h3::get_client(&self.addr) {
                 Ok(client) => {
                     let url = url::get_api_url(&self.addr, path);
                     let builder = client
@@ -36,7 +36,7 @@ impl Site {
     }
 
     pub async fn h3_build(&self, method: Method, path: &str) -> Result<reqwest::RequestBuilder> {
-        let client = h3::get_client(&self.addr).await?;
+        let client = h3::get_client(&self.addr)?;
         let url = url::get_api_url(&self.addr, path);
         let builder = client
             .request(method, url)
@@ -55,7 +55,7 @@ impl Site {
         T: Serialize,
     {
         if self.version == Version::HTTP_3 {
-            match h3::get_client(&self.addr).await {
+            match h3::get_client(&self.addr) {
                 Ok(client) => {
                     let url = url::get_api_query_url(&self.addr, path, Some(req));
                     let builder = client

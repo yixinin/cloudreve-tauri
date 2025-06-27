@@ -3,6 +3,8 @@ use reqwest::Client;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use anyhow::Result;
+
 use crate::hc::h3;
 
 /// 线程安全的 Client 对象池
@@ -22,10 +24,10 @@ impl ClientPool {
     }
 
     /// 从池中获取 Client（若池空则新建）
-    pub fn get(&self, addr: &str, p2p: bool) -> Option<Client> {
+    pub fn get(&self, addr: &str, p2p: bool) -> Result<Client> {
         let mut pool = self.pool.lock().unwrap();
         if let Some(client) = pool.pop_front() {
-            Some(client)
+            Ok(client)
         } else {
             Self::create_client(addr, p2p)
         }
@@ -41,16 +43,18 @@ impl ClientPool {
     }
 
     /// 创建新 Client（复用配置）
-    fn create_client(addr: &str, p2p: bool) -> Option<Client> {
+    fn create_client(addr: &str, p2p: bool) -> Result<Client> {
         if !p2p {
-            return Client::builder()
+            if let Ok(client) = Client::builder()
                 .pool_max_idle_per_host(20) // 优化连接复用[1,6](@ref)
                 .timeout(std::time::Duration::from_secs(10))
                 .tcp_keepalive(std::time::Duration::from_secs(60))
                 .build()
-                .ok();
+            {
+                return Ok(client);
+            }
         }
-        return h3::get_client(addr).ok();
+        return h3::get_client(addr);
     }
 }
 
@@ -61,7 +65,7 @@ lazy_static::lazy_static! {
 }
 
 /// 从全局池获取 Client
-pub fn acquire_client(addr: &str, p2p: bool) -> Option<Client> {
+pub fn acquire_client(addr: &str, p2p: bool) -> Result<Client> {
     CLIENT_POOL.load().get(addr, p2p)
 }
 
