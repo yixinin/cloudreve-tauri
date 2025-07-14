@@ -733,6 +733,7 @@ dependencies = [
  "md5",
  "quinn",
  "read-progress-stream",
+ "redb",
  "regex",
  "reqwest 0.12.20",
  "rustls",
@@ -3602,6 +3603,15 @@ dependencies = [
  "bytes",
  "futures",
  "pin-project-lite",
+]
+
+[[package]]
+name = "redb"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cef6a6d3a65ea334d6cdfb31fa2525c20184b7aa7bd1ad1e2e37502610d4609f"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

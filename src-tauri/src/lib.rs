@@ -5,13 +5,14 @@ use std::{
     path::{self},
     sync::{
         atomic::{AtomicU32, Ordering},
-        OnceLock,
+        Mutex, OnceLock,
     },
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::{
+    app::AppState,
     net::has_ipv6_connectivity,
     proto::{
         login::LoginReq,
@@ -33,7 +34,7 @@ use proto::{
 use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreExt;
 
-pub mod client;
+pub mod app;
 pub mod hc;
 pub mod login;
 pub mod media;
@@ -42,6 +43,10 @@ pub mod proto;
 pub mod rendezvouser;
 pub mod storage;
 pub mod transfer;
+
+static SETTINGS: &str = "app/settings.json";
+static APP_DATA: &str = "app/data.json";
+static ID: &str = "app/id.json";
 
 static IDGEN: AtomicU32 = AtomicU32::new(0);
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -53,15 +58,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let store = app.store("app_data.json")?;
-            let ipv6 = has_ipv6_connectivity();
-            store.set("ipv6", serde_json::json!(ipv6));
-            let id_store = app.store("id.json")?;
-            if let Some(id) = id_store.get("transfer") {
-                if let Ok(id) = serde_json::from_value::<u32>(id) {
-                    IDGEN.store(id, Ordering::Relaxed);
-                }
-            }
+            let app_state = app::AppState::new()?;
+            app.manage(Mutex::new(app_state));
             #[cfg(mobile)]
             {
                 let app_handle = app.handle();
@@ -210,7 +208,7 @@ async fn prepare(app: AppHandle, username: String) -> JsonResult<proto::login::P
 
 #[tauri::command]
 async fn login(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     username: String,
     password: String,
 ) -> JsonResult<proto::login::LoginAck> {
