@@ -5,19 +5,31 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
+use tauri::utils::acl::schema;
 
 use reqwest::Client;
 
 pub fn get_client(addr: &str) -> Result<Client> {
-    let uri: http::Uri = addr.parse()?;
-    let schema = uri.scheme_str().unwrap_or("https://");
-    // let socket = UdpSocket::bind("0.0.0.0:0")?;
-    // let local_port = socket.local_addr()?.port();
-    // drop(socket);
+    let uri: http::Uri;
+    if !addr.starts_with("http") {
+        uri = format!("https://{}", addr).parse()?;
+    } else {
+        uri = addr.parse()?;
+    }
+
+    let port = uri.port_u16().unwrap_or_default();
+    let host = uri.host().unwrap_or_default();
+    let schema = uri.scheme_str().unwrap_or("https");
+    let signal_url: String;
+    if port > 0 && port != 80 && port != 443 {
+        signal_url = format!("{}://{}:{}/api/v4/p2p/signal", schema, host, port)
+    } else {
+        signal_url = format!("{}://{}/api/v4/p2p/signal", schema, host)
+    }
+
     let local_port = 5212;
 
-    let dns_resolver =
-        super::p2p_dns::P2PResolver::new(schema, "/api/v4/p2p/signal", Some(local_port), None);
+    let dns_resolver = super::p2p_dns::P2PResolver::new(&signal_url, local_port, None);
     let builder = reqwest::ClientBuilder::new()
         .http3_prior_knowledge()
         .http3_keep_alive_interval(Duration::from_secs(15))

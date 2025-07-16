@@ -1,46 +1,78 @@
+use futures_util::lock::Mutex;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
-use crate::rendezvouser;
-use std::net::SocketAddr;
+use anyhow::Result;
 
-#[derive(Debug)]
+use crate::rendezvouser;
+use std::{net::SocketAddr, sync::Arc, vec};
+
+#[derive(Debug, Clone)]
 pub struct P2PResolver {
-    schema: String,
-    uri: String,
-    local_port: Option<u16>,
+    latest_update: Option<std::time::SystemTime>,
+    state: Arc<Mutex<SignalResolver>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignalResolver {
+    signal_url: String,
+    local_port: u16,
     stun_addrs: Option<Vec<String>>,
+    addrs: Option<Vec<SocketAddr>>,
+}
+
+impl SignalResolver {
+    pub fn new(signal_url: &str, local_port: u16, stun_addrs: Option<Vec<String>>) -> Self {
+        Self {
+            signal_url: signal_url.to_string(),
+            local_port: local_port,
+            stun_addrs: stun_addrs,
+            addrs: None,
+        }
+    }
+
+    pub async fn lookup(&self) -> Result<Vec<SocketAddr>> {
+        if let Some(addrs) = self.addrs.clone() {
+            return Ok(addrs);
+        }
+
+        let client = rendezvouser::SignalClient::new(&self.signal_url, self.stun_addrs.clone());
+        let (local_addr, _, remote_addr) = client.get_remote_addr(Some(self.local_port)).await?;
+        rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr);
+
+        return Ok(vec![remote_addr]);
+    }
+    pub async fn reset(&mut self) {
+        self.addrs = None;
+    }
 }
 
 impl P2PResolver {
-    pub fn new(
-        schema: &str,
-        uri: &str,
-        local_port: Option<u16>,
-        stun_addrs: Option<Vec<String>>,
-    ) -> Self {
-        Self {
-            schema: schema.to_string(),
-            uri: uri.to_string(),
-            local_port,
-            stun_addrs,
-        }
+    pub fn new(signal_url: &str, local_port: u16, stun_addrs: Option<Vec<String>>) -> Self {
+        let resolver = Self {
+            latest_update: None,
+            state: Arc::new(Mutex::new(SignalResolver::new(
+                signal_url, local_port, stun_addrs,
+            ))),
+        };
+
+        resolver
     }
 }
 
 impl Resolve for P2PResolver {
-    fn resolve(&self, name: Name) -> Resolving {
-        let local_port = self.local_port;
-        let stun_addrs = self.stun_addrs.clone();
-        let schema = self.schema.clone();
-        let uri = self.uri.clone();
+    fn resolve(&self, _: Name) -> Resolving {
+        let resolver = self.clone();
         Box::pin(async move {
-            // {https://}{A.B.C}{/api/v4/p2p/signal}
-            let url = format!("{}{}{}", schema, name.as_str(), uri);
-            let client = rendezvouser::SignalClient::new(&url, stun_addrs);
-            let (local_addr, _, remote_addr) = client.get_remote_addr(local_port).await?;
-            rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr);
+            let mut state = resolver.state.lock().await;
+            if let Some(latest_update) = resolver.latest_update {
+                let d = std::time::SystemTime::now().duration_since(latest_update)?;
+                if d.as_secs() > 300 {
+                    state.reset();
+                }
+            }
+            let addrs = state.lookup().await?;
             let addrs: Addrs = Box::new(SocketAddrs {
-                iter: vec![remote_addr].into_iter(),
+                iter: addrs.clone().into_iter(),
             });
             Ok(addrs)
         })
