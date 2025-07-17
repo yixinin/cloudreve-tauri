@@ -1,15 +1,14 @@
+use redb::{ReadableTable, TableDefinition};
 use reqwest::Version;
 use std::{
     collections::{HashMap, HashSet},
     fmt::format,
     path::{self},
-    sync::{
-        atomic::{AtomicU32, Ordering},
-        Mutex, OnceLock,
-    },
+    sync::atomic::{AtomicU32, Ordering},
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
+use tokio::sync::Mutex;
 
 use crate::{
     app::AppState,
@@ -102,7 +101,12 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-async fn get_address(app: &AppHandle) -> Result<(String, Version)> {
+async fn get_address(state: tauri::State<'_, Mutex<AppState>>) -> Result<(String, Version)> {
+    let app = state.lock().await;
+
+    let db = app.db.begin_write()?;
+    let table = db.open_table(TableDefinition::new("settings"))?;
+    let val = table.get("network")?;
     if let Ok(store) = app.store("settings.json") {
         match store.get("network") {
             Some(value) => {
@@ -216,6 +220,9 @@ async fn login(
         email: username,
         password,
     };
+    let app = state.lock().await;
+    let client = app.hc_pool.get(addr, true)?;
+
     let (address, version) = get_address(&app).await?;
     let ack = login::login(&address, &req.email, &req.password, version).await?;
     if let Ok(store) = app.store("app_data.json") {

@@ -33,13 +33,12 @@ pub async fn prepare(addr: &str, email: &str, version: Version) -> Result<Prepar
     Err(AppError::Message(ack.code, ack.msg))
 }
 
-pub async fn login(addr: &str, email: &str, pass: &str, version: Version) -> Result<LoginAck> {
-    let site = Site {
-        token: "".to_string(),
-        addr: addr.to_string(),
-        version: version,
-    };
-
+pub async fn login(
+    client: reqwest::Client,
+    email: &str,
+    pass: &str,
+    version: Version,
+) -> Result<LoginAck> {
     let request = LoginReq {
         email: email.to_string(),
         password: pass.to_string(),

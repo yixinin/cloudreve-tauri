@@ -11,6 +11,7 @@ use crate::hc::h3;
 #[derive(Debug)]
 pub struct ClientPool {
     pool: Arc<Mutex<VecDeque<Client>>>,
+    h3_pool: Arc<Mutex<VecDeque<Client>>>,
     max_size: usize,
 }
 
@@ -19,23 +20,41 @@ impl ClientPool {
     pub fn new(max_size: usize) -> Self {
         Self {
             pool: Arc::new(Mutex::new(VecDeque::with_capacity(max_size))),
+            h3_pool: Arc::new(Mutex::new(VecDeque::with_capacity(max_size))),
             max_size,
         }
     }
 
     /// 从池中获取 Client（若池空则新建）
-    pub fn get(&self, addr: &str, p2p: bool) -> Result<Client> {
+    pub fn get_h3(&self, addr: &str) -> Result<Client> {
+        let mut pool = self.h3_pool.lock().unwrap();
+        if let Some(client) = pool.pop_front() {
+            Ok(client)
+        } else {
+            Self::create_client(addr, true)
+        }
+    }
+    /// 从池中获取 Client（若池空则新建）
+    pub fn get(&self) -> Result<Client> {
         let mut pool = self.pool.lock().unwrap();
         if let Some(client) = pool.pop_front() {
             Ok(client)
         } else {
-            Self::create_client(addr, p2p)
+            Self::create_client("", false)
         }
     }
 
     /// 归还 Client 到池中
     pub fn put(&self, client: Client) {
         let mut pool = self.pool.lock().unwrap();
+        if pool.len() < self.max_size {
+            pool.push_back(client);
+        }
+        // 若池满，Client 会被自动丢弃（触发连接关闭）
+    }
+    /// 归还 Client 到池中
+    pub fn put_h3(&self, client: Client) {
+        let mut pool = self.h3_pool.lock().unwrap();
         if pool.len() < self.max_size {
             pool.push_back(client);
         }
@@ -56,20 +75,4 @@ impl ClientPool {
         }
         return h3::get_client(addr);
     }
-}
-
-/// 全局静态对象池（线程安全）
-lazy_static::lazy_static! {
-    static ref CLIENT_POOL: ArcSwap<ClientPool> =
-        ArcSwap::from(Arc::new(ClientPool::new(20)));  // 默认池大小20
-}
-
-/// 从全局池获取 Client
-pub fn acquire_client(addr: &str, p2p: bool) -> Result<Client> {
-    CLIENT_POOL.load().get(addr, p2p)
-}
-
-/// 归还 Client 到全局池
-pub fn release_client(client: Client) {
-    CLIENT_POOL.load().put(client);
 }
