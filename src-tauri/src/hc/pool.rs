@@ -24,37 +24,19 @@ impl ClientPool {
             max_size,
         }
     }
-
     /// 从池中获取 Client（若池空则新建）
-    pub fn get_h3(&self, addr: &str) -> Result<Client> {
-        let mut pool = self.h3_pool.lock().unwrap();
-        if let Some(client) = pool.pop_front() {
-            Ok(client)
-        } else {
-            Self::create_client(addr, true)
-        }
-    }
-    /// 从池中获取 Client（若池空则新建）
-    pub fn get(&self) -> Result<Client> {
+    pub fn get(&self, addr: &str, p2p: bool) -> Result<Client> {
         let mut pool = self.pool.lock().unwrap();
         if let Some(client) = pool.pop_front() {
             Ok(client)
         } else {
-            Self::create_client("", false)
+            Self::create_client(addr, p2p)
         }
     }
 
     /// 归还 Client 到池中
     pub fn put(&self, client: Client) {
         let mut pool = self.pool.lock().unwrap();
-        if pool.len() < self.max_size {
-            pool.push_back(client);
-        }
-        // 若池满，Client 会被自动丢弃（触发连接关闭）
-    }
-    /// 归还 Client 到池中
-    pub fn put_h3(&self, client: Client) {
-        let mut pool = self.h3_pool.lock().unwrap();
         if pool.len() < self.max_size {
             pool.push_back(client);
         }

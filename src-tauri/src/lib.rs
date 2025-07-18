@@ -101,112 +101,34 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-async fn get_address(state: tauri::State<'_, Mutex<AppState>>) -> Result<(String, Version)> {
-    let app = state.lock().await;
-
-    let db = app.db.begin_write()?;
-    let table = db.open_table(TableDefinition::new("settings"))?;
-    let val = table.get("network")?;
-    if let Ok(store) = app.store("settings.json") {
-        match store.get("network") {
-            Some(value) => {
-                let data = serde_json::from_value::<NetworkSettings>(value)?;
-                let version = data.get_http_version();
-                match data.mode {
-                    NetworkMode::Normal => {
-                        return Ok((gen_addr(&data.addr), version));
-                    }
-                    NetworkMode::IPv6 => {
-                        if !data.addr6.is_empty() {
-                            return Ok((gen_addr(&data.addr6), version));
-                        }
-                    }
-                    NetworkMode::P2P => {
-                        return Ok((gen_addr(&data.addr), version));
-                    }
-                    _ => {
-                        if !data.addr6.is_empty() && has_ipv6_connectivity() {
-                            return Ok((gen_addr(&data.addr6), version));
-                        }
-                        return Ok((gen_addr(&data.addr), version));
-                    }
-                }
-            }
-            None => {
-                return Err(AppError::Anyhow(anyhow::format_err!("address is none")));
-            }
-        }
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
-}
-
-fn gen_addr(addr: &str) -> String {
-    if addr.starts_with("http") {
-        return addr.to_string();
-    }
-    return format!("https://{}", addr);
-}
-
 #[tauri::command]
 async fn set_network_settings(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     addr: Option<String>,
     addr6: Option<String>,
     mode: NetworkMode,
 ) -> JsonResult<NetworkSettings> {
-    if let Ok(store) = app.store("settings.json") {
-        if let Some(value) = store.get("network") {
-            if let Ok(mut settings) = serde_json::from_value::<NetworkSettings>(value) {
-                if let Some(addr) = addr {
-                    settings.addr = addr;
-                }
-                if let Some(addr6) = addr6 {
-                    settings.addr6 = addr6
-                }
-                if mode == NetworkMode::P2P {
-                    let _ = hc::h3::get_client(&settings.addr).await;
-                }
-                settings.mode = mode;
-                store.set("network", serde_json::json!(&settings));
-                return Ok(settings);
-            }
-        }
-
-        let settings = NetworkSettings {
-            addr: addr.unwrap_or_default(),
-            addr6: addr6.unwrap_or_default(),
-            mode: mode,
-        };
-        store.set("network", serde_json::json!(&settings));
-        return Ok(settings);
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
+    let app = state.lock().await;
+    app.set_addr(addr, addr6, mode)?;
+    let settings = app.get_addr()?;
+    return Ok(settings);
 }
 #[tauri::command]
-async fn get_network_settings(app: AppHandle) -> JsonResult<NetworkSettings> {
-    if let Ok(store) = app.store("settings.json") {
-        if let Some(value) = store.get("network") {
-            let settings = serde_json::from_value::<NetworkSettings>(value)?;
-
-            if settings.mode == NetworkMode::P2P {
-                let _ = hc::h3::get_client(&settings.addr).await;
-            }
-            return Ok(settings);
-        }
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
+async fn get_network_settings(
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> JsonResult<NetworkSettings> {
+    let app = state.lock().await;
+    let settings = app.get_addr()?;
+    return Ok(settings);
 }
 
 #[tauri::command]
-async fn prepare(app: AppHandle, username: String) -> JsonResult<proto::login::PrepareAck> {
-    let (address, version) = get_address(&app).await?;
-    let ack = login::prepare(&address, &username, version).await?;
+async fn prepare(
+    state: tauri::State<'_, Mutex<AppState>>,
+    username: String,
+) -> JsonResult<proto::login::PrepareAck> {
+    let app = state.lock().await;
+    let ack = app.prepare(&username).await?;
     Ok(ack)
 }
 
@@ -215,32 +137,21 @@ async fn login(
     state: tauri::State<'_, Mutex<AppState>>,
     username: String,
     password: String,
-) -> JsonResult<proto::login::LoginAck> {
+) -> JsonResult<proto::login::User> {
     let req = LoginReq {
         email: username,
         password,
     };
     let app = state.lock().await;
-    let client = app.hc_pool.get(addr, true)?;
-
-    let (address, version) = get_address(&app).await?;
-    let ack = login::login(&address, &req.email, &req.password, version).await?;
-    if let Ok(store) = app.store("app_data.json") {
-        let json_token = serde_json::json!(ack.token);
-        store.set("token", json_token.clone());
-    }
+    let ack = app.login(&req.email, &req.password).await?;
     return Ok(ack);
 }
 
 #[tauri::command]
-async fn logout(app: AppHandle) -> JsonResult<bool> {
-    if let Ok(store) = app.store("app_data.json") {
-        store.delete("token");
-        return Ok(true);
-    }
-    Err(AppError::Anyhow(anyhow::format_err!(
-        "cannot access app data"
-    )))
+async fn logout(state: tauri::State<'_, Mutex<AppState>>) -> JsonResult<bool> {
+    let app = state.lock().await;
+    app.logout().await?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -251,7 +162,7 @@ async fn get_storage_info(app: AppHandle) -> JsonResult<proto::storage::GetCapac
 
 #[tauri::command]
 async fn get_files(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     path: String,
     category: String,
     page: u64,
@@ -259,13 +170,13 @@ async fn get_files(
     order_by: String,
     order: String,
 ) -> JsonResult<GetFilesAck> {
+    let app = state.lock().await;
     let uri: String;
     if !category.is_empty() {
         uri = format!("{}?category={}", path, category);
     } else {
         uri = path;
     }
-    let site = get_token(&app).await?;
     let req = GetFilesReq {
         page: page,
         page_size: page_size,
@@ -273,7 +184,7 @@ async fn get_files(
         order_by: order_by,
         order_direction: order,
     };
-    let mut ack = storage::get_files(&site, req).await?;
+    let mut ack = app.get_files(req).await?;
     let mut tags = HashSet::new();
     let mut filetags = Vec::new();
     for (_, file) in ack.files.iter().enumerate() {
@@ -299,7 +210,7 @@ async fn get_files(
 
 #[tauri::command]
 async fn search_files(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     name: String,
     path: String,
     page: u64,
@@ -307,9 +218,9 @@ async fn search_files(
     order_by: String,
     order: String,
 ) -> JsonResult<GetFilesAck> {
+    let app = state.lock().await;
     let uri = format!("{}?name={}&name_op_or=&case_folding=", path, name);
 
-    let site = get_token(&app).await?;
     let req = GetFilesReq {
         page: page,
         page_size: page_size,
@@ -317,7 +228,7 @@ async fn search_files(
         order_by: order_by,
         order_direction: order,
     };
-    storage::get_files(&site, req).await
+    app.get_files(req).await
 }
 
 #[tauri::command]
@@ -416,7 +327,7 @@ async fn rename_file(app: AppHandle, new_name: String, uri: String) -> JsonResul
 
 #[tauri::command]
 async fn delete_file(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     unlink: bool,
     soft_delete: bool,
     uri: String,
@@ -439,7 +350,7 @@ async fn get_file_info(app: AppHandle, uri: String) -> JsonResult<FileDetailsInf
 
 #[tauri::command]
 async fn share_file(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     downloads: u64,
     expire: u64,
     is_private: bool,
@@ -525,7 +436,7 @@ async fn get_paths(app: AppHandle) -> JsonResult<Vec<String>> {
 
 #[tauri::command]
 async fn download(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     id: u32,
     url: String,
     file_path: String,
@@ -536,7 +447,7 @@ async fn download(
 
 #[tauri::command]
 async fn upload(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     id: u32,
     url: String,
     file_path: String,
@@ -655,7 +566,7 @@ async fn delete_share(app: AppHandle, id: String) -> JsonResult<bool> {
 }
 #[tauri::command]
 async fn update_share(
-    app: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
     id: String,
     downloads: u8,
     expire: u64,

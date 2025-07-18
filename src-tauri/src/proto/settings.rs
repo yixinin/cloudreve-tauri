@@ -1,4 +1,7 @@
-use std::{fmt::format, str::FromStr};
+use std::{
+    fmt::{self, format},
+    str::FromStr,
+};
 
 use reqwest::Version;
 use serde::{Deserialize, Serialize};
@@ -26,6 +29,19 @@ impl FromStr for NetworkMode {
     }
 }
 
+impl fmt::Display for NetworkMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode = match self {
+            NetworkMode::P2P => "4",
+            NetworkMode::IPv6 => "3",
+            NetworkMode::Normal => "2",
+            _ => "1",
+        };
+
+        write!(f, "{}", mode)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NetworkSettings {
     pub addr: String,
@@ -42,33 +58,42 @@ impl NetworkSettings {
         }
     }
 
-    pub fn get_url(&self, path: &str) -> String {
+    pub fn get_addr(&self) -> String {
+        let addr: String;
         if !self.addr6.is_empty() {
-            match self.mode {
-                NetworkMode::IPv6 => {
-                    return format!("{}{}", self.addr6, path);
-                }
+            addr = match self.mode {
+                NetworkMode::IPv6 => self.addr6.clone(),
                 NetworkMode::Auto => {
                     if crate::net::has_ipv6_connectivity() {
-                        return format!("{}{}", self.addr6, path);
+                        self.addr6.clone()
+                    } else {
+                        self.addr.clone()
                     }
                 }
-                _ => {
-                    return format!("{}{}", self.addr, path);
-                }
-            }
+                _ => self.addr.clone(),
+            };
+        } else {
+            addr = self.addr.clone();
         }
-
-        return format!("{}{}", self.addr, path);
+        if addr.starts_with("http") {
+            return addr;
+        }
+        return format!("https://{}", addr);
     }
+
+    pub fn get_url(&self, path: &str) -> String {
+        format!("{}{}", self.get_addr(), path)
+    }
+
     pub fn get_query<T>(&self, path: &str, req: T) -> String
     where
         T: Serialize,
     {
-        let url = self.get_url(path);
+        let addr = self.get_addr();
         format!(
-            "{}?{}",
-            url,
+            "{}{}?{}",
+            addr,
+            path,
             serde_urlencoded::to_string(req).unwrap_or_default()
         )
     }
