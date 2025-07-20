@@ -1,10 +1,6 @@
-use redb::{ReadableTable, TableDefinition};
-use reqwest::Version;
 use std::{
     collections::{HashMap, HashSet},
-    fmt::format,
     path::{self},
-    sync::atomic::{AtomicU32, Ordering},
 };
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
@@ -12,42 +8,29 @@ use tokio::sync::Mutex;
 
 use crate::{
     app::AppState,
-    net::has_ipv6_connectivity,
     proto::{
         login::LoginReq,
         settings::{NetworkMode, NetworkSettings},
+        storage::GetCapacityAck,
         Result,
     },
 };
 
-use chrono::Utc;
-use hc::Site;
 use proto::{
     file::DeleteFileAck,
-    login::Token,
-    settings,
     share::{GetSharesAck, ShareInfo},
     storage::{Download, FileDetailsInfo, FileInfo, FileTag, GetFilesAck, GetFilesReq, Upload},
     AppError, JsonResult,
 };
-use serde::{Deserialize, Serialize};
-use tauri_plugin_store::StoreExt;
+use serde::Serialize;
 
 pub mod app;
 pub mod hc;
-pub mod login;
 pub mod media;
 pub mod net;
 pub mod proto;
 pub mod rendezvouser;
-pub mod storage;
 pub mod transfer;
-
-static SETTINGS: &str = "app/settings.json";
-static APP_DATA: &str = "app/data.json";
-static ID: &str = "app/id.json";
-
-static IDGEN: AtomicU32 = AtomicU32::new(0);
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -86,7 +69,6 @@ pub fn run() {
             get_file_source,
             pre_upload,
             pre_download,
-            get_paths,
             upload,
             download,
             get_shares,
@@ -155,9 +137,9 @@ async fn logout(state: tauri::State<'_, Mutex<AppState>>) -> JsonResult<bool> {
 }
 
 #[tauri::command]
-async fn get_storage_info(app: AppHandle) -> JsonResult<proto::storage::GetCapacityAck> {
-    let site = get_token(&app).await?;
-    storage::get_capacity(&site).await
+async fn get_storage_info(state: tauri::State<'_, Mutex<AppState>>) -> JsonResult<GetCapacityAck> {
+    let app = state.lock().await;
+    app.get_capacity().await
 }
 
 #[tauri::command]
@@ -232,9 +214,9 @@ async fn search_files(
 }
 
 #[tauri::command]
-async fn get_url(app: AppHandle, uri: String) -> JsonResult<String> {
-    let site = get_token(&app).await?;
-    let ack = storage::batch_urls(&site, vec![uri.clone()]).await;
+async fn get_url(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonResult<String> {
+    let app = state.lock().await;
+    let ack = app.batch_urls(vec![uri.clone()]).await;
     match ack {
         Ok(ack) => {
             for v in ack.urls {
@@ -247,65 +229,12 @@ async fn get_url(app: AppHandle, uri: String) -> JsonResult<String> {
 }
 
 #[tauri::command]
-async fn get_thumb_url(app: AppHandle, uri: String) -> JsonResult<String> {
-    let site = get_token(&app).await?;
-    storage::get_thumb_url(&site, uri).await
-}
-
-pub async fn get_token(app: &AppHandle) -> Result<Site> {
-    let now = Utc::now();
-    let store = app.store("app_data.json").unwrap();
-    let (addr, http_version) = get_address(app).await?;
-    if addr.is_empty() {
-        return Err(AppError::Unauthorized);
-    }
-    match store.get("token") {
-        Some(value) => {
-            match serde_json::from_value::<Token>(value.clone()) {
-                Ok(token) => {
-                    if token.access_expires > now && !token.access_token.is_empty() {
-                        return Ok(Site {
-                            token: token.access_token,
-                            addr,
-                            version: http_version,
-                        });
-                    }
-
-                    if token.refresh_expires > now {
-                        match login::refresh_token(Site {
-                            token: token.refresh_token,
-                            addr: addr.clone(),
-                            version: http_version,
-                        })
-                        .await
-                        {
-                            Ok(token) => {
-                                let json_token = serde_json::json!(token);
-                                store.set("token", json_token.clone());
-                                return Ok(Site {
-                                    token: token.access_token,
-                                    addr,
-                                    version: http_version,
-                                });
-                            }
-                            Err(err) => {
-                                println!("{}", err);
-                                return Err(AppError::Unauthorized);
-                            }
-                        }
-                    }
-                }
-                Err(err) => {
-                    println!("{}", err);
-                    return Err(AppError::Unauthorized);
-                }
-            }
-            return Err(AppError::Unauthorized);
-        }
-        None => {
-            return Err(AppError::Unauthorized);
-        }
-    }
+async fn get_thumb_url(
+    state: tauri::State<'_, Mutex<AppState>>,
+    uri: String,
+) -> JsonResult<String> {
+    let app = state.lock().await;
+    app.get_thumb_url(uri).await
 }
 
 #[derive(Clone, Serialize)]
@@ -314,9 +243,13 @@ pub struct SessionChaged {
 }
 
 #[tauri::command]
-async fn rename_file(app: AppHandle, new_name: String, uri: String) -> JsonResult<FileDetailsInfo> {
-    let site = get_token(&app).await?;
-    let ack = storage::rename(&site, new_name, uri).await;
+async fn rename_file(
+    state: tauri::State<'_, Mutex<AppState>>,
+    new_name: String,
+    uri: String,
+) -> JsonResult<FileDetailsInfo> {
+    let app = state.lock().await;
+    let ack = app.rename(new_name, uri).await;
     match ack {
         Ok(ack) => {
             return Ok(ack);
@@ -332,20 +265,26 @@ async fn delete_file(
     soft_delete: bool,
     uri: String,
 ) -> JsonResult<Option<DeleteFileAck>> {
-    let site = get_token(&app).await?;
-    storage::delete_file(&site, unlink, soft_delete, vec![uri]).await
+    let app = state.lock().await;
+    app.delete_file(unlink, soft_delete, vec![uri]).await
 }
 
 #[tauri::command]
-async fn create_folder(app: AppHandle, uri: String) -> JsonResult<FileInfo> {
-    let site = get_token(&app).await?;
-    storage::create_folder(&site, &uri).await
+async fn create_folder(
+    state: tauri::State<'_, Mutex<AppState>>,
+    uri: String,
+) -> JsonResult<FileInfo> {
+    let app = state.lock().await;
+    app.create_folder(&uri).await
 }
 
 #[tauri::command]
-async fn get_file_info(app: AppHandle, uri: String) -> JsonResult<FileDetailsInfo> {
-    let site = get_token(&app).await?;
-    storage::get_file_info(&site, &uri).await
+async fn get_file_info(
+    state: tauri::State<'_, Mutex<AppState>>,
+    uri: String,
+) -> JsonResult<FileDetailsInfo> {
+    let app = state.lock().await;
+    app.get_file_info(&uri).await
 }
 
 #[tauri::command]
@@ -356,14 +295,17 @@ async fn share_file(
     is_private: bool,
     uri: String,
 ) -> JsonResult<String> {
-    let site = get_token(&app).await?;
-    storage::share_file(&site, downloads, expire, is_private, &uri).await
+    let app = state.lock().await;
+    app.share_file(downloads, expire, is_private, &uri).await
 }
 
 #[tauri::command]
-async fn get_file_source(app: AppHandle, uri: String) -> JsonResult<String> {
-    let site = get_token(&app).await?;
-    let ack = storage::get_file_source(&site, vec![uri]).await?;
+async fn get_file_source(
+    state: tauri::State<'_, Mutex<AppState>>,
+    uri: String,
+) -> JsonResult<String> {
+    let app = state.lock().await;
+    let ack = app.get_file_source(vec![uri]).await?;
     return Ok(ack.link);
 }
 
@@ -404,39 +346,8 @@ fn get_downloads_dir(app: &AppHandle) -> Result<String> {
 }
 
 #[tauri::command]
-async fn get_paths(app: AppHandle) -> JsonResult<Vec<String>> {
-    let paths = vec![
-        app.path()
-            .public_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        app.path()
-            .video_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        app.path()
-            .local_data_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        app.path()
-            .home_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-    ];
-    for v in &paths {
-        println!("path: {}", v.to_string());
-    }
-
-    Ok(paths)
-}
-
-#[tauri::command]
 async fn download(
-    state: tauri::State<'_, Mutex<AppState>>,
+    app: AppHandle,
     id: u32,
     url: String,
     file_path: String,
@@ -447,21 +358,26 @@ async fn download(
 
 #[tauri::command]
 async fn upload(
-    state: tauri::State<'_, Mutex<AppState>>,
+    hd: AppHandle,
     id: u32,
     url: String,
     file_path: String,
     headers: Option<HashMap<String, String>>,
 ) -> JsonResult<u32> {
-    transfer::upload(&app, id, &url, &file_path, headers).await
+    transfer::upload(&hd, id, &url, &file_path, headers).await
 }
 
 #[tauri::command]
-async fn pre_upload(app: AppHandle, target_path: String, policy_id: String) -> JsonResult<Upload> {
-    let site = get_token(&app).await?;
-    let id = gen_id(&app);
+async fn pre_upload(
+    hd: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    target_path: String,
+    policy_id: String,
+) -> JsonResult<Upload> {
+    let app = state.lock().await;
+    let id = app.gen_id()?;
 
-    match app.dialog().file().blocking_pick_file() {
+    match hd.dialog().file().blocking_pick_file() {
         Some(path) => {
             let file_path = path.as_path().unwrap();
             let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -476,18 +392,16 @@ async fn pre_upload(app: AppHandle, target_path: String, policy_id: String) -> J
                 "  dir:{}, policy_id:{}, filename:{}, mime:{}",
                 target_path, policy_id, filename, &mime_type
             );
-            let ack =
-                storage::upload_file_session(&site, &mime_type, &uri, size, &policy_id).await?;
+            let ack = app
+                .upload_file_session(&mime_type, &uri, size, &policy_id)
+                .await?;
+            let addr = app.get_addr()?.get_addr();
             let upload = Upload {
                 id: id,
                 file_path: file_path.to_string_lossy().to_string(),
                 filename: filename.to_string(),
                 uri: uri.clone(),
-                upload_url: format!(
-                    "{}/{}/0",
-                    hc::url::get_api_url(&site.addr, "/file/upload"),
-                    ack.session_id
-                ),
+                upload_url: format!("{}{}/{}/0", addr, "/file/upload", ack.session_id),
             };
             return Ok(upload);
         }
@@ -498,9 +412,14 @@ async fn pre_upload(app: AppHandle, target_path: String, policy_id: String) -> J
 }
 
 #[tauri::command]
-async fn pre_download(app: AppHandle, uri: String, filename: String) -> JsonResult<Download> {
-    let site = get_token(&app).await?;
-    let ack = storage::batch_urls(&site, vec![uri.clone()]).await;
+async fn pre_download(
+    hd: AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    uri: String,
+    filename: String,
+) -> JsonResult<Download> {
+    let app = state.lock().await;
+    let ack = app.batch_urls(vec![uri.clone()]).await;
     let mut download_url = "".to_string();
     match ack {
         Ok(ack) => {
@@ -510,7 +429,7 @@ async fn pre_download(app: AppHandle, uri: String, filename: String) -> JsonResu
         }
         Err(e) => return Err(e),
     }
-    let saved_dir = get_downloads_dir(&app)?;
+    let saved_dir = get_downloads_dir(&hd)?;
     if download_url.is_empty() || saved_dir.is_empty() {
         return Err(AppError::Anyhow(anyhow::format_err!(
             "fail, dir:{}, url:{}",
@@ -518,7 +437,7 @@ async fn pre_download(app: AppHandle, uri: String, filename: String) -> JsonResu
             download_url
         )));
     }
-    let id = gen_id(&app);
+    let id = app.gen_id()?;
 
     Ok(Download {
         id: id,
@@ -530,39 +449,42 @@ async fn pre_download(app: AppHandle, uri: String, filename: String) -> JsonResu
     })
 }
 
-fn gen_id(app: &AppHandle) -> u32 {
-    let id = IDGEN.fetch_add(1, Ordering::SeqCst);
-
-    if let Ok(store) = app.store("id.json") {
-        store.set("transfer", serde_json::json!(id));
-    }
-    return id;
+#[tauri::command]
+async fn restore_file(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonResult<bool> {
+    let app = state.lock().await;
+    app.restore_file(vec![uri.clone()]).await
 }
 #[tauri::command]
-async fn restore_file(app: AppHandle, uri: String) -> JsonResult<bool> {
-    let site = get_token(&app).await?;
-    storage::restore_file(&site, vec![uri.clone()]).await
+async fn delete_lock(
+    state: tauri::State<'_, Mutex<AppState>>,
+    tokens: Vec<String>,
+) -> JsonResult<bool> {
+    let app = state.lock().await;
+    app.delete_lock(tokens).await
 }
 #[tauri::command]
-async fn delete_lock(app: AppHandle, tokens: Vec<String>) -> JsonResult<bool> {
-    let token = get_token(&app).await?;
-    storage::delete_lock(&token, tokens).await
-}
-#[tauri::command]
-async fn get_shares(app: AppHandle, order_direction: String) -> JsonResult<GetSharesAck> {
-    let site = get_token(&app).await?;
-    storage::get_shares(&site, &order_direction).await
+async fn get_shares(
+    state: tauri::State<'_, Mutex<AppState>>,
+    order_direction: String,
+) -> JsonResult<GetSharesAck> {
+    let app = state.lock().await;
+    app.get_shares(&order_direction).await
 }
 
 #[tauri::command]
-async fn move_file(app: AppHandle, copy: bool, dst: String, uri: String) -> JsonResult<bool> {
-    let token = get_token(&app).await?;
-    storage::move_file(&token, vec![uri], &dst, copy).await
+async fn move_file(
+    state: tauri::State<'_, Mutex<AppState>>,
+    copy: bool,
+    dst: String,
+    uri: String,
+) -> JsonResult<bool> {
+    let app = state.lock().await;
+    app.move_file(vec![uri], &dst, copy).await
 }
 #[tauri::command]
-async fn delete_share(app: AppHandle, id: String) -> JsonResult<bool> {
-    let site = get_token(&app).await?;
-    storage::delete_share(&site, &id).await
+async fn delete_share(state: tauri::State<'_, Mutex<AppState>>, id: String) -> JsonResult<bool> {
+    let app = state.lock().await;
+    app.delete_share(&id).await
 }
 #[tauri::command]
 async fn update_share(
@@ -572,11 +494,15 @@ async fn update_share(
     expire: u64,
     uri: String,
 ) -> JsonResult<String> {
-    let site = get_token(&app).await?;
-    storage::update_share(&site, &id, downloads, expire, &uri).await
+    let app = state.lock().await;
+    app.update_share(&id, downloads, expire, &uri).await
 }
 #[tauri::command]
-async fn get_share_info(app: AppHandle, id: String, owner_extended: bool) -> JsonResult<ShareInfo> {
-    let site = get_token(&app).await?;
-    storage::get_share_info(&site, &id, owner_extended).await
+async fn get_share_info(
+    state: tauri::State<'_, Mutex<AppState>>,
+    id: String,
+    owner_extended: bool,
+) -> JsonResult<ShareInfo> {
+    let app = state.lock().await;
+    app.get_share_info(&id, owner_extended).await
 }

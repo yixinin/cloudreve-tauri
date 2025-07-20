@@ -101,6 +101,7 @@ impl SignalClient {
 
         let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
         socket.set_reuse_address(true)?;
+        #[cfg(target_family = "unix")]
         socket.set_reuse_port(true)?;
         socket.set_nonblocking(true)?;
         socket.bind(&laddr.into())?;

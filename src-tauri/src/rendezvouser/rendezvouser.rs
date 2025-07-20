@@ -33,6 +33,7 @@ pub fn simple_udp_hole_punching(
         Some(socket2::Protocol::UDP),
     )?;
     socket.set_reuse_address(true)?;
+    #[cfg(target_family = "unix")]
     socket.set_reuse_port(true)?;
     let local_addr = local_addr.unwrap_or("0.0.0.0:0".parse()?);
     socket.bind(&SockAddr::from(local_addr))?;

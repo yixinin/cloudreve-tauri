@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use anyhow::Result;
-use redb::TableDefinition;
+use redb::{ReadableTable, TableDefinition};
 
 const TABLE_SETTING: TableDefinition<&str, String> = TableDefinition::new("setting");
 
@@ -19,13 +19,54 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Result<Self> {
-        let db = redb::Database::builder().open("app.db")?;
+        let db = redb::Database::builder().create("app.db")?;
+        // {
+        //     let db = db.begin_write()?;
+        //     let mut id = 1;
+        //     {
+        //         let setting = db.open_table(TABLE_SETTING)?;
+        //         let val = setting.get("id")?;
+
+        //         if let Some(value) = val {
+        //             let id_str = value.value();
+        //             id = id_str.parse().unwrap_or(1);
+        //         }
+        //     }
+        //     {
+        //         let mut setting = db.open_table(TABLE_SETTING)?;
+        //         setting.insert("id", (id + 1).to_string())?;
+        //     }
+
+        //     db.commit()?;
+        //     println!("current id: {}", id);
+        // }
         let hc_pool = hc::pool::ClientPool::new(20);
         Ok(Self { db, hc_pool })
     }
 
     pub fn reset_pool(&mut self) {
         self.hc_pool = hc::pool::ClientPool::new(20);
+    }
+
+    pub fn gen_id(&self) -> Result<u32> {
+        let db = self.db.begin_write()?;
+        let mut id = 1;
+        {
+            let setting = db.open_table(TABLE_SETTING)?;
+            let val = setting.get("id")?;
+
+            if let Some(value) = val {
+                let id_str = value.value();
+                id = id_str.parse().unwrap_or(1);
+            }
+        }
+        {
+            let mut setting = db.open_table(TABLE_SETTING)?;
+            setting.insert("id", (id + 1).to_string())?;
+        }
+
+        db.commit()?;
+        Ok(id)
     }
 
     pub fn get_token(&self) -> Result<Token> {
