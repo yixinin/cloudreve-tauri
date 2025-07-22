@@ -82,7 +82,7 @@ impl NetworkSettings {
     }
 
     pub fn get_url(&self, path: &str) -> String {
-        format!("{}{}", self.get_addr(), path)
+        format!("{}/api/v4{}", self.get_addr(), path)
     }
 
     pub fn get_query<T>(&self, path: &str, req: T) -> String
@@ -91,7 +91,7 @@ impl NetworkSettings {
     {
         let addr = self.get_addr();
         format!(
-            "{}{}?{}",
+            "{}/api/v4/{}?{}",
             addr,
             path,
             serde_urlencoded::to_string(req).unwrap_or_default()

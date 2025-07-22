@@ -35,9 +35,9 @@ export interface PrepareAck {
     password_enabled: boolean;
 }
 
-export const userLogin = async (username: string, password: string): Promise<LoginAck> => {
+export const userLogin = async (username: string, password: string): Promise<User> => {
     try {
-        const ack = await invoke<LoginAck>('login', { username, password });
+        const ack = await invoke<User>('login', { username, password });
         return ack;
     } catch (error) {
         console.error('login error:', error);

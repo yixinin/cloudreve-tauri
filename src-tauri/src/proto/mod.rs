@@ -18,3 +18,15 @@ pub struct Ack<T> {
     pub msg: String,
     pub correlation_id: Option<String>,
 }
+
+impl<T> Ack<T> {
+    pub fn get_data(self) -> JsonResult<T> {
+        if self.code == 0 {
+            if let Some(data) = self.data {
+                return Ok(data);
+            }
+            return Err(AppError::NoData);
+        }
+        Err(AppError::Message(self.code, self.msg))
+    }
+}

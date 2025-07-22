@@ -25,7 +25,7 @@ impl super::AppState {
         let addr = network.get_addr();
         let url = network.get_url("/session/token");
         let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
-        let builder = client.post(url);
+        let builder = client.post(&url);
         let request = LoginReq {
             email: email.to_string(),
             password: pass.to_string(),
@@ -33,10 +33,13 @@ impl super::AppState {
         match builder.json(&request).send().await {
             Ok(resp) => {
                 self.hc_pool.put(client);
-                let ack = resp.json::<Ack<LoginAck>>().await?;
+                let text = resp.text().await?;
+                let ack: Ack<LoginAck> = serde_json::from_str(&text)?;
                 if ack.code == 0 {
                     if let Some(data) = ack.data {
-                        self.set_token(data.token);
+                        if let Err(e) = self.set_token(data.token) {
+                            println!("set token error:{}", e);
+                        }
                         return Ok(data.user);
                     }
                 }

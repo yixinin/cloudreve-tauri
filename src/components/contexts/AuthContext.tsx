@@ -15,7 +15,7 @@ type SessionChanged = {
 type AuthContextType = {
     isAuthenticated: boolean;
     user: User | null;
-    login: (ack: LoginAck) => void;
+    login: (ack: User) => void;
     logout: () => void;
     checkAuth: () => Promise<boolean>;
 };
@@ -83,9 +83,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             navigate("/login")
         }
     }, [isAuthenticated])
-    const login = (ack: LoginAck) => {
-        localStorage.setItem('userData', JSON.stringify(ack.user));
-        setUser(ack.user);
+    const login = (user: User) => {
+        localStorage.setItem('userData', JSON.stringify(user));
+        setUser(user);
         setIsAuthenticated(true);
     };
 

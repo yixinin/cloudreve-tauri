@@ -51,6 +51,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            toggle_fullscreen,
             get_network_settings,
             set_network_settings,
             prepare,
@@ -81,6 +82,12 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[tauri::command]
+fn toggle_fullscreen(window: tauri::Window) {
+    let is_fullscreen = window.is_fullscreen().unwrap_or(false);
+    window.set_fullscreen(!is_fullscreen).unwrap();
 }
 
 #[tauri::command]
