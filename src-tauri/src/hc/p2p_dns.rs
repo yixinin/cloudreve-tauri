@@ -36,9 +36,13 @@ impl SignalResolver {
         }
 
         let client = rendezvouser::SignalClient::new(&self.signal_url, self.stun_addrs.clone());
-        let (local_addr, _, remote_addr) = client.get_remote_addr(Some(self.local_port)).await?;
-        rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr);
-
+        let (local_addr, pub_addr, remote_addr) =
+            client.get_remote_addr(Some(self.local_port)).await?;
+        let _ = rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr)?;
+        println!(
+            "send punch local: {}, pub: {} remote: {}",
+            local_addr, pub_addr, remote_addr
+        );
         return Ok(vec![remote_addr]);
     }
     pub async fn reset(&mut self) {
@@ -67,10 +71,11 @@ impl Resolve for P2PResolver {
             if let Some(latest_update) = resolver.latest_update {
                 let d = std::time::SystemTime::now().duration_since(latest_update)?;
                 if d.as_secs() > 300 {
-                    state.reset();
+                    state.reset().await;
                 }
             }
             let addrs = state.lookup().await?;
+            println!("dns lookup addrs: {:?}", addrs);
             let addrs: Addrs = Box::new(SocketAddrs {
                 iter: addrs.clone().into_iter(),
             });

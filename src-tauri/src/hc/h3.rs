@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::{sync::Arc, time::Duration};
+use std::{net::UdpSocket, sync::Arc, time::Duration};
 
 use reqwest::Client;
 
@@ -21,8 +21,9 @@ pub fn get_client(addr: &str) -> Result<Client> {
         signal_url = format!("{}://{}/api/v4/p2p/signal", schema, host)
     }
 
-    let local_port = 5212;
-
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    let local_port = socket.local_addr()?.port();
+    drop(socket);
     let dns_resolver = super::p2p_dns::P2PResolver::new(&signal_url, local_port, None);
     let builder = reqwest::ClientBuilder::new()
         .http3_prior_knowledge()

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use socket2::Protocol;
 use std::net::{SocketAddr, ToSocketAddrs as _};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -82,7 +83,12 @@ impl SignalClient {
                     }
                 }
                 Err(e) => {
-                    println!("get pub addr by {} fail: {}", stun_addr, e);
+                    println!(
+                        "get pub addr by local port:{}, stun: {} fail: {}",
+                        local_port.unwrap_or_default(),
+                        stun_addr,
+                        e
+                    );
                 }
             }
         }
@@ -99,9 +105,13 @@ impl SignalClient {
             None => "0.0.0.0:0".to_string().parse()?,
         };
 
-        let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, None)?;
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(Protocol::UDP),
+        )?;
         socket.set_reuse_address(true)?;
-        #[cfg(target_family = "unix")]
+        #[cfg(unix)]
         socket.set_reuse_port(true)?;
         socket.set_nonblocking(true)?;
         socket.bind(&laddr.into())?;

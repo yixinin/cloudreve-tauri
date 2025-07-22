@@ -33,11 +33,12 @@ pub fn simple_udp_hole_punching(
         Some(socket2::Protocol::UDP),
     )?;
     socket.set_reuse_address(true)?;
-    #[cfg(target_family = "unix")]
+    #[cfg(unix)]
     socket.set_reuse_port(true)?;
+    socket.set_nonblocking(true)?;
     let local_addr = local_addr.unwrap_or("0.0.0.0:0".parse()?);
     socket.bind(&SockAddr::from(local_addr))?;
     let _ = socket.send_to(b"PUNCH", &SockAddr::from(remote_addr))?;
-    // println!("send punch to remote: {}", remote_addr);
+
     Ok(())
 }
