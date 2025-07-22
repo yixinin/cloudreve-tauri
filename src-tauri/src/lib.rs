@@ -42,6 +42,11 @@ pub fn run() {
         .setup(|app| {
             let app_state = app::AppState::new()?;
             app.manage(Mutex::new(app_state));
+            #[cfg(dev)]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.open_devtools();
+            }
             #[cfg(mobile)]
             {
                 let app_handle = app.handle();
