@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::net::IpAddr;
 use std::{net::UdpSocket, sync::Arc, time::Duration};
 
 use reqwest::Client;
@@ -28,9 +29,10 @@ pub fn get_client(addr: &str) -> Result<Client> {
     let builder = reqwest::ClientBuilder::new()
         .http3_prior_knowledge()
         .http3_keep_alive_interval(Duration::from_secs(15))
-        .tls_early_data(true)
         .http3_max_idle_timeout(Duration::from_secs(3600))
+        .local_address(IpAddr::from([0, 0, 0, 0]))
         .http3_local_port(local_port)
+        .use_rustls_tls()
         .dns_resolver(Arc::new(dns_resolver))
         .danger_accept_invalid_certs(true);
 
