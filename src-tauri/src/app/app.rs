@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     hc,
@@ -13,7 +13,7 @@ use redb::{ReadableTable, TableDefinition};
 const TABLE_SETTING: TableDefinition<&str, String> = TableDefinition::new("setting");
 
 pub struct AppState {
-    pub db: redb::Database,
+    pub db: Arc<redb::Database>,
     pub hc_pool: hc::pool::ClientPool,
 }
 
@@ -41,7 +41,10 @@ impl AppState {
         //     println!("current id: {}", id);
         // }
         let hc_pool = hc::pool::ClientPool::new(20);
-        Ok(Self { db, hc_pool })
+        Ok(Self {
+            db: Arc::new(db),
+            hc_pool,
+        })
     }
 
     pub fn reset_pool(&mut self) {
@@ -49,10 +52,11 @@ impl AppState {
     }
 
     pub fn gen_id(&self) -> Result<u32> {
-        let db = self.db.begin_write()?;
+        let db = self.db.clone();
+        let txn = db.begin_write()?;
         let mut id = 1;
         {
-            let setting = db.open_table(TABLE_SETTING)?;
+            let setting = txn.open_table(TABLE_SETTING)?;
             let val = setting.get("id")?;
 
             if let Some(value) = val {
@@ -61,21 +65,26 @@ impl AppState {
             }
         }
         {
-            let mut setting = db.open_table(TABLE_SETTING)?;
+            let mut setting = txn.open_table(TABLE_SETTING)?;
             setting.insert("id", (id + 1).to_string())?;
         }
 
-        db.commit()?;
+        txn.commit()?;
         Ok(id)
     }
 
     pub fn get_token(&self) -> Result<Token> {
-        let mut settings = self.get_settings(vec![
-            "access_token",
-            "access_token_ttl",
-            "refresh_token",
-            "refresh_token_ttl",
-        ])?;
+        let mut settings = self
+            .get_settings(vec![
+                "access_token",
+                "access_expires",
+                "refresh_token",
+                "refresh_expires",
+            ])
+            .map_err(|e| anyhow::format_err!("get settings error: {}", e))?;
+        if settings.len() != 4 {
+            return Err(anyhow::format_err!("not found"));
+        }
         let token = Token {
             access_token: settings.remove("access_token").unwrap_or_default(),
             access_expires: settings
@@ -91,21 +100,23 @@ impl AppState {
         Ok(token)
     }
     pub fn set_token(&self, token: Token) -> Result<()> {
-        let db = self.db.begin_write()?;
+        let db = self.db.clone();
+        let txn = db.begin_write()?;
         {
-            let mut setting = db.open_table(TABLE_SETTING)?;
-            setting.insert("access_token", token.access_token);
-            setting.insert("access_expires", token.access_expires.to_string());
-            setting.insert("refresh_token", token.refresh_token);
-            setting.insert("refresh_expires", token.refresh_expires.to_string());
+            let mut setting = txn.open_table(TABLE_SETTING)?;
+            setting.insert("access_token", token.access_token)?;
+            setting.insert("access_expires", token.access_expires.to_string())?;
+            setting.insert("refresh_token", token.refresh_token)?;
+            setting.insert("refresh_expires", token.refresh_expires.to_string())?;
         }
 
-        db.commit()?;
+        txn.commit()?;
         Ok(())
     }
     pub fn get_addr(&self) -> Result<NetworkSettings> {
-        let rd = self.db.begin_read()?;
-        let settings = rd.open_table(TABLE_SETTING)?;
+        let db = self.db.clone();
+        let txn = db.begin_read()?;
+        let settings = txn.open_table(TABLE_SETTING)?;
         let addr = if let Some(val) = settings.get("addr")? {
             val.value()
         } else {
@@ -134,27 +145,30 @@ impl AppState {
         addr6: Option<String>,
         mode: NetworkMode,
     ) -> Result<()> {
-        let db = self.db.begin_write()?;
+        let db = self.db.clone();
+        let txn = db.begin_write()?;
         {
-            let mut setting = db.open_table(TABLE_SETTING)?;
+            let mut setting = txn.open_table(TABLE_SETTING)?;
             if let Some(value) = addr {
-                setting.insert("addr", value);
+                setting.insert("addr", value)?;
             }
             if let Some(value) = addr6 {
-                setting.insert("addr6", value);
+                setting.insert("addr6", value)?;
             }
 
-            setting.insert("mode", mode.to_string());
+            setting.insert("mode", mode.to_string())?;
         }
 
-        db.commit()?;
+        txn.commit()?;
         Ok(())
     }
     pub fn get_settings(&self, keys: Vec<&str>) -> Result<HashMap<String, String>> {
-        let db = self.db.begin_read()?;
-        let setting = db.open_table(TABLE_SETTING)?;
+        let db = self.db.clone();
+        let txn = db.begin_read()?;
+        let setting = txn.open_table(TABLE_SETTING)?;
         let mut m = HashMap::with_capacity(keys.len());
         for key in keys {
+            let key = key;
             if let Some(val) = setting.get(key)? {
                 m.insert(key.to_string(), val.value());
             }
@@ -162,14 +176,15 @@ impl AppState {
         Ok(m)
     }
     pub fn delete_settings(&self, keys: Vec<&str>) -> Result<()> {
-        let db = self.db.begin_write()?;
+        let db = self.db.clone();
+        let txn = db.begin_write()?;
         {
-            let mut setting = db.open_table(TABLE_SETTING)?;
+            let mut setting = txn.open_table(TABLE_SETTING)?;
             for key in keys {
-                setting.remove(key);
+                setting.remove(key)?;
             }
         }
-        db.commit()?;
+        txn.commit()?;
         Ok(())
     }
 
@@ -191,7 +206,11 @@ impl AppState {
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
         }
-        let token = self.get_token()?;
+        let token = if let Ok(token) = self.get_token() {
+            Ok(token)
+        } else {
+            self.refresh_token().await
+        }?;
         builder = builder.header("authorization", token.access_token);
         let resp = builder.json(&req).send().await?;
         self.hc_pool.put(client);
@@ -209,15 +228,26 @@ impl AppState {
         let network = self.get_addr()?;
         let addr = network.get_addr();
         let url = network.get_url(path);
-        let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
+        let client = self
+            .hc_pool
+            .get(&addr, network.mode == NetworkMode::P2P)
+            .map_err(|e| anyhow::format_err!("get client error: {}", e))?;
 
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
         }
-        let token = self.get_token()?;
+        let token = if let Ok(token) = self.get_token() {
+            Ok(token)
+        } else {
+            self.refresh_token().await
+        }?;
         builder = builder.header("authorization", token.access_token);
-        let resp = builder.query(&req).send().await?;
+        let resp = builder
+            .query(&req)
+            .send()
+            .await
+            .map_err(|e| anyhow::format_err!("send request error: {}", e))?;
         self.hc_pool.put(client);
         Ok(resp)
     }
@@ -232,7 +262,11 @@ impl AppState {
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
         }
-        let token = self.get_token()?;
+        let token = if let Ok(token) = self.get_token() {
+            Ok(token)
+        } else {
+            self.refresh_token().await
+        }?;
         builder = builder.header("authorization", token.access_token);
         let resp = builder.send().await?;
         self.hc_pool.put(client);

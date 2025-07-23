@@ -1,4 +1,3 @@
-use arc_swap::ArcSwap;
 use reqwest::Client;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -11,7 +10,6 @@ use crate::hc::h3;
 #[derive(Debug)]
 pub struct ClientPool {
     pool: Arc<Mutex<VecDeque<Client>>>,
-    h3_pool: Arc<Mutex<VecDeque<Client>>>,
     max_size: usize,
 }
 
@@ -20,7 +18,6 @@ impl ClientPool {
     pub fn new(max_size: usize) -> Self {
         Self {
             pool: Arc::new(Mutex::new(VecDeque::with_capacity(max_size))),
-            h3_pool: Arc::new(Mutex::new(VecDeque::with_capacity(max_size))),
             max_size,
         }
     }
@@ -40,7 +37,6 @@ impl ClientPool {
         if pool.len() < self.max_size {
             pool.push_back(client);
         }
-        // 若池满，Client 会被自动丢弃（触发连接关闭）
     }
 
     /// 创建新 Client（复用配置）

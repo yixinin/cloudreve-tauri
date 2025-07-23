@@ -56,5 +56,4 @@ http = "1.3"
 bytes = "1"
 socket2 = { version = "0.6", features = ["all"] }
 lazy_static = "1"
-arc-swap = "1"
 redb = "2.6"

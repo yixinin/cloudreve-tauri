@@ -23,7 +23,7 @@ pub async fn udp_hole_punching(local_addr: SocketAddr, remote_addr: SocketAddr) 
     Err(anyhow::format_err!("timeout"))
 }
 
-pub fn simple_udp_hole_punching(
+pub async fn simple_udp_hole_punching(
     local_addr: Option<SocketAddr>,
     remote_addr: SocketAddr,
 ) -> Result<()> {
@@ -38,6 +38,8 @@ pub fn simple_udp_hole_punching(
     socket.set_nonblocking(true)?;
     let local_addr = local_addr.unwrap_or("0.0.0.0:0".parse()?);
     socket.bind(&SockAddr::from(local_addr))?;
+    let _ = socket.send_to(b"PUNCH", &SockAddr::from(remote_addr))?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let _ = socket.send_to(b"PUNCH", &SockAddr::from(remote_addr))?;
 
     Ok(())
