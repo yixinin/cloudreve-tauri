@@ -4,9 +4,10 @@ use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
 
+use crate::hc::pool::HttpClient;
 use crate::rendezvouser;
 
-pub async fn get_client(addr: &str) -> Result<Client> {
+pub async fn get_client(addr: &str) -> Result<HttpClient> {
     let uri: http::Uri;
     if !addr.starts_with("http") {
         uri = format!("https://{}", addr).parse()?;
@@ -33,11 +34,17 @@ pub async fn get_client(addr: &str) -> Result<Client> {
         .http3_prior_knowledge()
         .http3_keep_alive_interval(Duration::from_secs(15))
         .http3_max_idle_timeout(Duration::from_secs(3600))
-        .local_address(IpAddr::from([0, 0, 0, 0]))
+        .local_address(local_addr.ip())
         .http3_local_port(local_addr.port())
         .use_rustls_tls()
         .dns_resolver(Arc::new(dns_resolver))
         .danger_accept_invalid_certs(true);
 
-    Ok(builder.build()?)
+    match builder.build() {
+        Ok(client) => return Ok(HttpClient::new(client, Some(remote_addr))),
+        Err(e) => {
+            println!("build error: {}", e);
+            return Err(anyhow::format_err!("build error: {}", e));
+        }
+    }
 }

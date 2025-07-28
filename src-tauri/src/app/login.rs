@@ -23,15 +23,17 @@ impl super::AppState {
     pub async fn login(&self, email: &str, pass: &str) -> Result<User> {
         let network = self.get_addr()?;
         let addr = network.get_addr();
-        let url = network.get_url("/session/token");
+
         let client = self
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await?;
+        let url = network.get_url(client.get_addr(), "/session/token");
         let builder = client.post(&url);
         let request = LoginReq {
             email: email.to_string(),
             password: pass.to_string(),
         };
+        println!("send request to: {}, body: {:#?}", &url, &request);
         match builder.json(&request).send().await {
             Ok(resp) => {
                 self.hc_pool.put(client);
@@ -70,10 +72,11 @@ impl super::AppState {
 
         let network = self.get_addr()?;
         let addr = network.get_addr();
-        let url = network.get_url("/session/token/refresh");
+
         let client = self
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await?;
+        let url = network.get_url(client.get_addr(), "/session/token/refresh");
 
         let resp = client.post(url).json(&request).send().await?;
         let ack = resp.json::<Ack<Token>>().await?;

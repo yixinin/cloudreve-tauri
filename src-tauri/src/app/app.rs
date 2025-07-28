@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    hc::{self, h3},
+    hc::{self, h3, pool::HttpClient},
     proto::{
         login::Token,
         settings::{NetworkMode, NetworkSettings},
@@ -53,7 +53,7 @@ impl AppState {
         self.hc_pool = hc::pool::ClientPool::new(20);
     }
 
-    pub async fn get_client(&self, addr: &str, p2p: bool) -> Result<reqwest::Client> {
+    pub async fn get_client(&self, addr: &str, p2p: bool) -> Result<HttpClient> {
         match self.hc_pool.get(p2p) {
             Ok(client) => Ok(client),
             Err(e) => {
@@ -214,11 +214,10 @@ impl AppState {
     {
         let network = self.get_addr()?;
         let addr = network.get_addr();
-        let url = network.get_url(path);
         let client = self
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await?;
-
+        let url = network.get_url(client.get_addr(), path);
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
@@ -244,12 +243,12 @@ impl AppState {
     {
         let network = self.get_addr()?;
         let addr = network.get_addr();
-        let url = network.get_url(path);
+
         let client = self
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await
             .map_err(|e| anyhow::format_err!("get client error: {}", e))?;
-
+        let url = network.get_url(client.get_addr(), path);
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
@@ -272,11 +271,11 @@ impl AppState {
     pub async fn request(&self, method: reqwest::Method, path: &str) -> Result<reqwest::Response> {
         let network = self.get_addr()?;
         let addr = network.get_addr();
-        let url = network.get_url(path);
+
         let client = self
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await?;
-
+        let url = network.get_url(client.get_addr(), path);
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {
             builder = builder.version(http::Version::HTTP_3)
