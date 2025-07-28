@@ -1,10 +1,12 @@
 use anyhow::Result;
 use std::net::IpAddr;
-use std::{net::UdpSocket, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use reqwest::Client;
 
-pub fn get_client(addr: &str) -> Result<Client> {
+use crate::rendezvouser;
+
+pub async fn get_client(addr: &str) -> Result<Client> {
     let uri: http::Uri;
     if !addr.starts_with("http") {
         uri = format!("https://{}", addr).parse()?;
@@ -22,16 +24,17 @@ pub fn get_client(addr: &str) -> Result<Client> {
         signal_url = format!("{}://{}/api/v4/p2p/signal", schema, host)
     }
 
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    let local_port = socket.local_addr()?.port();
-    drop(socket);
-    let dns_resolver = super::p2p_dns::P2PResolver::new(&signal_url, local_port, None);
+    let signal_cli = rendezvouser::SignalClient::new(&signal_url, None);
+    let (local_addr, pub_addr, remote_addr) = signal_cli.get_remote_addr(None).await?;
+    println!("{} -> {} -> {}", local_addr, pub_addr, remote_addr);
+
+    let dns_resolver = super::p2p_dns::P2PResolver::new(remote_addr);
     let builder = reqwest::ClientBuilder::new()
         .http3_prior_knowledge()
         .http3_keep_alive_interval(Duration::from_secs(15))
         .http3_max_idle_timeout(Duration::from_secs(3600))
         .local_address(IpAddr::from([0, 0, 0, 0]))
-        .http3_local_port(local_port)
+        .http3_local_port(local_addr.port())
         .use_rustls_tls()
         .dns_resolver(Arc::new(dns_resolver))
         .danger_accept_invalid_certs(true);

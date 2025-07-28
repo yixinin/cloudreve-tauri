@@ -8,8 +8,7 @@ use std::{net::SocketAddr, sync::Arc, vec};
 
 #[derive(Debug, Clone)]
 pub struct P2PResolver {
-    latest_update: Option<std::time::SystemTime>,
-    state: Arc<Mutex<SignalResolver>>,
+    remote_addr: SocketAddr,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +37,6 @@ impl SignalResolver {
         let client = rendezvouser::SignalClient::new(&self.signal_url, self.stun_addrs.clone());
         let (local_addr, pub_addr, remote_addr) =
             client.get_remote_addr(Some(self.local_port)).await?;
-        let _ = rendezvouser::simple_udp_hole_punching(Some(local_addr), remote_addr).await?;
         println!(
             "send punch local: {}, pub: {} remote: {}",
             local_addr, pub_addr, remote_addr
@@ -51,13 +49,8 @@ impl SignalResolver {
 }
 
 impl P2PResolver {
-    pub fn new(signal_url: &str, local_port: u16, stun_addrs: Option<Vec<String>>) -> Self {
-        let resolver = Self {
-            latest_update: None,
-            state: Arc::new(Mutex::new(SignalResolver::new(
-                signal_url, local_port, stun_addrs,
-            ))),
-        };
+    pub fn new(remote_addr: SocketAddr) -> Self {
+        let resolver = Self { remote_addr };
 
         resolver
     }
@@ -67,15 +60,7 @@ impl Resolve for P2PResolver {
     fn resolve(&self, _: Name) -> Resolving {
         let resolver = self.clone();
         Box::pin(async move {
-            let mut state = resolver.state.lock().await;
-            if let Some(latest_update) = resolver.latest_update {
-                let d = std::time::SystemTime::now().duration_since(latest_update)?;
-                if d.as_secs() > 300 {
-                    state.reset().await;
-                }
-            }
-            let addrs = state.lookup().await?;
-            println!("dns lookup addrs: {:?}", addrs);
+            let addrs = vec![resolver.remote_addr.clone()];
             let addrs: Addrs = Box::new(SocketAddrs {
                 iter: addrs.clone().into_iter(),
             });

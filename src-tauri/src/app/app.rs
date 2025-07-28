@@ -1,13 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    hc,
+    hc::{self, h3},
     proto::{
         login::Token,
         settings::{NetworkMode, NetworkSettings},
     },
+    rendezvouser::SignalClient,
 };
 use anyhow::Result;
+use http::request;
 use redb::{ReadableTable, TableDefinition};
 
 const TABLE_SETTING: TableDefinition<&str, String> = TableDefinition::new("setting");
@@ -49,6 +51,19 @@ impl AppState {
 
     pub fn reset_pool(&mut self) {
         self.hc_pool = hc::pool::ClientPool::new(20);
+    }
+
+    pub async fn get_client(&self, addr: &str, p2p: bool) -> Result<reqwest::Client> {
+        match self.hc_pool.get(p2p) {
+            Ok(client) => Ok(client),
+            Err(e) => {
+                if p2p {
+                    let client = h3::get_client(addr).await?;
+                    return Ok(client);
+                }
+                Err(e)
+            }
+        }
     }
 
     pub fn gen_id(&self) -> Result<u32> {
@@ -200,7 +215,9 @@ impl AppState {
         let network = self.get_addr()?;
         let addr = network.get_addr();
         let url = network.get_url(path);
-        let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
 
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {
@@ -229,8 +246,8 @@ impl AppState {
         let addr = network.get_addr();
         let url = network.get_url(path);
         let client = self
-            .hc_pool
-            .get(&addr, network.mode == NetworkMode::P2P)
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await
             .map_err(|e| anyhow::format_err!("get client error: {}", e))?;
 
         let mut builder = client.request(method, url);
@@ -256,7 +273,9 @@ impl AppState {
         let network = self.get_addr()?;
         let addr = network.get_addr();
         let url = network.get_url(path);
-        let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
 
         let mut builder = client.request(method, url);
         if network.mode == NetworkMode::P2P {

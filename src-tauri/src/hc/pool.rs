@@ -22,13 +22,23 @@ impl ClientPool {
         }
     }
     /// 从池中获取 Client（若池空则新建）
-    pub fn get(&self, addr: &str, p2p: bool) -> Result<Client> {
+    pub fn get(&self, p2p: bool) -> Result<Client> {
         let mut pool = self.pool.lock().unwrap();
         if let Some(client) = pool.pop_front() {
-            Ok(client)
+            return Ok(client);
         } else {
-            Self::create_client(addr, p2p)
+            if !p2p {
+                if let Ok(client) = Client::builder()
+                    .pool_max_idle_per_host(20) // 优化连接复用[1,6](@ref)
+                    .timeout(std::time::Duration::from_secs(10))
+                    .tcp_keepalive(std::time::Duration::from_secs(60))
+                    .build()
+                {
+                    return Ok(client);
+                }
+            }
         }
+        Err(anyhow::anyhow!("cannot create p2p client"))
     }
 
     /// 归还 Client 到池中
@@ -37,20 +47,5 @@ impl ClientPool {
         if pool.len() < self.max_size {
             pool.push_back(client);
         }
-    }
-
-    /// 创建新 Client（复用配置）
-    fn create_client(addr: &str, p2p: bool) -> Result<Client> {
-        if !p2p {
-            if let Ok(client) = Client::builder()
-                .pool_max_idle_per_host(20) // 优化连接复用[1,6](@ref)
-                .timeout(std::time::Duration::from_secs(10))
-                .tcp_keepalive(std::time::Duration::from_secs(60))
-                .build()
-            {
-                return Ok(client);
-            }
-        }
-        return h3::get_client(addr);
     }
 }

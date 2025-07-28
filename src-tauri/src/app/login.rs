@@ -24,7 +24,9 @@ impl super::AppState {
         let network = self.get_addr()?;
         let addr = network.get_addr();
         let url = network.get_url("/session/token");
-        let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
         let builder = client.post(&url);
         let request = LoginReq {
             email: email.to_string(),
@@ -69,7 +71,9 @@ impl super::AppState {
         let network = self.get_addr()?;
         let addr = network.get_addr();
         let url = network.get_url("/session/token/refresh");
-        let client = self.hc_pool.get(&addr, network.mode == NetworkMode::P2P)?;
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
 
         let resp = client.post(url).json(&request).send().await?;
         let ack = resp.json::<Ack<Token>>().await?;

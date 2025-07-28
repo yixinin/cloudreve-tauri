@@ -75,6 +75,8 @@ impl SignalClient {
 
                     match response.parse() {
                         Ok(remote_addr) => {
+                            let _ = super::simple_udp_hole_punching(Some(local_addr), remote_addr)
+                                .await;
                             return Ok((local_addr, pub_addr, remote_addr));
                         }
                         Err(e) => {
