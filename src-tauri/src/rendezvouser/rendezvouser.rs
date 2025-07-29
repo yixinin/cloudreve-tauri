@@ -1,7 +1,7 @@
 use anyhow::Result;
 use socket2::SockAddr;
 use std::net::SocketAddr;
-use tokio::time::Duration;
+use tokio::{net::UdpSocket, time::Duration};
 
 pub async fn udp_hole_punching(local_addr: SocketAddr, remote_addr: SocketAddr) -> Result<()> {
     let socket = tokio::net::UdpSocket::bind(local_addr).await?;
@@ -27,20 +27,9 @@ pub async fn simple_udp_hole_punching(
     local_addr: Option<SocketAddr>,
     remote_addr: SocketAddr,
 ) -> Result<()> {
-    let socket = socket2::Socket::new(
-        socket2::Domain::IPV4,
-        socket2::Type::DGRAM,
-        Some(socket2::Protocol::UDP),
-    )?;
-    socket.set_reuse_address(true)?;
-    #[cfg(unix)]
-    socket.set_reuse_port(true)?;
-    socket.set_nonblocking(true)?;
     let local_addr = local_addr.unwrap_or("0.0.0.0:0".parse()?);
-    socket.bind(&SockAddr::from(local_addr))?;
-    let _ = socket.send_to(b"PUNCH", &SockAddr::from(remote_addr))?;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let _ = socket.send_to(b"PUNCH", &SockAddr::from(remote_addr))?;
-
+    let socket = UdpSocket::bind(local_addr).await?;
+    println!("send PUNCH {} -> {}", local_addr, remote_addr);
+    let _ = socket.send_to(b"PUNCH", remote_addr).await?;
     Ok(())
 }

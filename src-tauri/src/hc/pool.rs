@@ -39,6 +39,9 @@ impl HttpClient {
     pub fn post<U: reqwest::IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
         self.request(reqwest::Method::POST, url)
     }
+    pub fn get<U: reqwest::IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
+        self.request(reqwest::Method::GET, url)
+    }
 }
 #[derive(Debug)]
 pub struct ClientPool {

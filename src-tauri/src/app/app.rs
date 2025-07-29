@@ -175,6 +175,7 @@ impl AppState {
         }
 
         txn.commit()?;
+
         Ok(())
     }
     pub fn get_settings(&self, keys: Vec<&str>) -> Result<HashMap<String, String>> {

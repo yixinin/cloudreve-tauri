@@ -1,3 +1,4 @@
+use http::Version;
 use std::{
     collections::{HashMap, HashSet},
     path::{self},
@@ -105,6 +106,13 @@ async fn set_network_settings(
     let app = state.lock().await;
     app.set_addr(addr, addr6, mode)?;
     let settings = app.get_addr()?;
+    if settings.mode == NetworkMode::P2P {
+        let client = app.get_client(&settings.addr, true).await?;
+        let url = settings.get_url(Some(settings.addr.clone()), "/site/config/basic");
+        let resp = client.get(url).version(Version::HTTP_3).send().await?;
+        app.hc_pool.put(client);
+        println!("get basic info: {}", resp.text().await?);
+    }
     return Ok(settings);
 }
 #[tauri::command]

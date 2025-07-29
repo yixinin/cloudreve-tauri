@@ -1,4 +1,4 @@
-use http::Method;
+use http::{Method, Version};
 
 use crate::proto::{
     login::{LoginAck, LoginReq, PrepareAck, RefreshTokenReq, Token, User},
@@ -28,7 +28,7 @@ impl super::AppState {
             .get_client(&addr, network.mode == NetworkMode::P2P)
             .await?;
         let url = network.get_url(client.get_addr(), "/session/token");
-        let builder = client.post(&url);
+        let builder = client.post(&url).version(Version::HTTP_3);
         let request = LoginReq {
             email: email.to_string(),
             password: pass.to_string(),
@@ -79,6 +79,7 @@ impl super::AppState {
         let url = network.get_url(client.get_addr(), "/session/token/refresh");
 
         let resp = client.post(url).json(&request).send().await?;
+        self.hc_pool.put(client);
         let ack = resp.json::<Ack<Token>>().await?;
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
