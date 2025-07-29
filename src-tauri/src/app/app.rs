@@ -204,6 +204,36 @@ impl AppState {
         Ok(())
     }
 
+    pub async fn request_json_addr<T>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        req: T,
+    ) -> Result<(reqwest::Response, Option<String>)>
+    where
+        T: serde::Serialize,
+    {
+        let network = self.get_addr()?;
+        let addr = network.get_addr();
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
+        let addr = client.get_addr();
+        let url = network.get_url(addr.clone(), path);
+        let mut builder = client.request(method, url);
+        if network.mode == NetworkMode::P2P {
+            builder = builder.version(http::Version::HTTP_3)
+        }
+        let token = if let Ok(token) = self.get_token() {
+            Ok(token)
+        } else {
+            self.refresh_token().await
+        }?;
+        builder = builder.header("authorization", token.access_token);
+        let resp = builder.json(&req).send().await?;
+        self.hc_pool.put(client);
+        Ok((resp, addr))
+    }
     pub async fn request_json<T>(
         &self,
         method: reqwest::Method,
@@ -290,5 +320,32 @@ impl AppState {
         let resp = builder.send().await?;
         self.hc_pool.put(client);
         Ok(resp)
+    }
+    pub async fn request_addr(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+    ) -> Result<(reqwest::Response, Option<String>)> {
+        let network = self.get_addr()?;
+        let addr = network.get_addr();
+
+        let client = self
+            .get_client(&addr, network.mode == NetworkMode::P2P)
+            .await?;
+        let addr = client.get_addr();
+        let url = network.get_url(addr.clone(), path);
+        let mut builder = client.request(method, url);
+        if network.mode == NetworkMode::P2P {
+            builder = builder.version(http::Version::HTTP_3)
+        }
+        let token = if let Ok(token) = self.get_token() {
+            Ok(token)
+        } else {
+            self.refresh_token().await
+        }?;
+        builder = builder.header("authorization", token.access_token);
+        let resp = builder.send().await?;
+        self.hc_pool.put(client);
+        Ok((resp, addr))
     }
 }

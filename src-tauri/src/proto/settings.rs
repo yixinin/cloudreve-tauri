@@ -83,7 +83,7 @@ impl NetworkSettings {
 
     pub fn get_url(&self, addr: Option<String>, path: &str) -> String {
         if let Some(addr) = addr {
-            return format!("https://{}/api/v4{}", addr, path);
+            return format!("{}/api/v4{}", addr, path);
         }
         format!("{}/api/v4{}", self.get_addr(), path)
     }
@@ -93,7 +93,7 @@ impl NetworkSettings {
         T: Serialize,
     {
         let addr = if let Some(addr) = addr {
-            format!("https://{}", addr)
+            format!("{}", addr)
         } else {
             self.get_addr()
         };

@@ -37,6 +37,7 @@ pub async fn get_client(addr: &str) -> Result<HttpClient> {
         .local_address(local_addr.ip())
         .http3_local_port(local_addr.port())
         .use_rustls_tls()
+        .timeout(Duration::from_secs(10))
         .dns_resolver(Arc::new(dns_resolver))
         .danger_accept_invalid_certs(true);
 

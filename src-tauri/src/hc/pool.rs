@@ -27,7 +27,10 @@ impl HttpClient {
         }
     }
     pub fn get_addr(&self) -> Option<String> {
-        return self.addr.clone();
+        if let Some(addr) = self.addr.clone() {
+            return Some(format!("https://{}", addr));
+        }
+        None
     }
     pub fn request<U: reqwest::IntoUrl>(
         &self,

@@ -1,12 +1,16 @@
+use std::str::FromStr;
+
+use http::Uri;
 use reqwest::Method;
 
 use crate::proto::{
     self,
     file::{DeleteFileAck, DeleteTokenReq},
+    settings::NetworkMode,
     storage::{
         BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
         FileSrouce, GetFileInfoReq, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck,
-        MoveReq, RenameReq, UploadSessionAck, UploadSessionReq,
+        MoveReq, RenameReq, UploadSessionAck, UploadSessionReq, Url,
     },
 };
 
@@ -117,22 +121,60 @@ impl super::AppState {
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
-        let resp = self.request_json(Method::POST, "/file/url", req).await?;
+        let (resp, addr) = self
+            .request_json_addr(Method::POST, "/file/url", req)
+            .await?;
         let ack = resp.json::<proto::Ack<BatchUrlsAck>>().await?;
         if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+            if let Some(mut data) = ack.data {
+                let settings = self.get_addr()?;
+                if settings.mode == NetworkMode::P2P {
+                    let mut urls = Vec::with_capacity(data.urls.len());
+                    for (_, url) in data.urls.iter().enumerate() {
+                        if let Ok(uri) = Uri::from_str(&url.url) {
+                            let url = format!(
+                                "{}{}",
+                                addr.clone().unwrap_or(settings.get_addr()),
+                                uri.path_and_query().unwrap().as_str()
+                            );
+                            urls.push(Url { url });
+                        }
+                    }
+                    data.urls = urls;
+                }
+                return Ok(data);
+            }
+            return Ok(BatchUrlsAck {
+                expires: String::new(),
+                urls: Vec::new(),
+            });
         } else {
             return Err(proto::AppError::Message(ack.code, ack.msg));
         }
     }
 
     pub async fn get_thumb_url(&self, uri: String) -> Result<String> {
-        let resp = self
-            .request(Method::GET, &format!("/file/thumb?uri={}", uri))
+        let (resp, addr) = self
+            .request_addr(Method::GET, &format!("/file/thumb?uri={}", uri))
             .await?;
         let ack = resp.json::<proto::Ack<GetThumbURLAck>>().await?;
         if ack.code == 0 {
-            return Ok(ack.data.unwrap().url);
+            if let Some(data) = ack.data {
+                if let Ok(uri) = Uri::from_str(&data.url) {
+                    let settings = self.get_addr()?;
+                    if settings.mode == NetworkMode::P2P {
+                        let url = format!(
+                            "{}{}",
+                            addr.unwrap_or(settings.get_addr()),
+                            uri.path_and_query().unwrap().as_str()
+                        );
+                        return Ok(url);
+                    }
+                }
+                return Ok(data.url);
+            }
+
+            return Ok(String::new());
         } else {
             return Err(proto::AppError::Message(ack.code, ack.msg));
         }
