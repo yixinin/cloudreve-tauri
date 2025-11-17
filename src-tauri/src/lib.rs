@@ -85,6 +85,11 @@ pub fn run() {
             delete_share,
             update_share,
             get_share_info,
+            get_sync_status,
+            get_sync_progress,
+            trigger_sync,
+            toggle_sync,
+            get_download_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -525,4 +530,83 @@ async fn get_share_info(
 ) -> JsonResult<ShareInfo> {
     let app = state.lock().await;
     app.get_share_info(&id, owner_extended).await
+}
+
+#[derive(Debug, Serialize)]
+struct SyncStatus {
+    enabled: bool,
+    last_sync: Option<String>,
+    synced_files: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncProgress {
+    percentage: u8,
+    synced: u32,
+    total: u32,
+    status: String,
+}
+
+#[tauri::command]
+async fn get_sync_status() -> JsonResult<SyncStatus> {
+    Ok(SyncStatus {
+        enabled: false,
+        last_sync: Some("2024-05-20T12:34:56".to_string()),
+        synced_files: Some(42),
+    })
+}
+
+#[tauri::command]
+async fn toggle_sync(enabled: bool) -> JsonResult<SyncStatus> {
+    Ok(SyncStatus {
+        enabled,
+        last_sync: None,
+        synced_files: None,
+    })
+}
+
+#[tauri::command]
+async fn get_sync_progress() -> JsonResult<SyncProgress> {
+    Ok(SyncProgress {
+        percentage: 35,
+        synced: 7,
+        total: 20,
+        status: "syncing".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn trigger_sync() -> JsonResult<()> {
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct DownloadHistoryItem {
+    id: u32,
+    file_name: String,
+    file_path: String,
+    url: String,
+    status: String,
+    progress: u8,
+    size: u64,
+    downloaded_at: String,
+}
+
+#[tauri::command]
+async fn get_download_history(
+    state: tauri::State<'_, Mutex<AppState>>,
+) -> JsonResult<Vec<DownloadHistoryItem>> {
+    let app = state.lock().await;
+    // 实际实现应从数据库或存储中获取下载历史
+    // 这里返回模拟数据作为示例
+    Ok(vec![DownloadHistoryItem {
+        id: 1,
+        file_name: "example.jpg",
+        file_path: "/downloads/example.jpg",
+        url: "https://example.com/example.jpg",
+        status: "completed",
+        progress: 100,
+        size: 1024 * 1024,
+        downloaded_at: "2024-06-18T10:30:00Z",
+    }])
 }

@@ -1,3 +1,4 @@
+import SettingsPage from './components/pages/SettingsPage';
 // App.tsx 路由主配置
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './components/contexts/AuthContext';
@@ -22,6 +23,7 @@ export function App() {
               <Route path="files" element={<FileListPage />} />
               <Route path='shares' element={<ShareListPage />} />
               <Route path='transfers' element={<TransferManager />} />
+              <Route path='settings' element={<SettingsPage />} />
             </Route>
           </Routes>
         </AuthProvider>

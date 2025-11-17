@@ -13,6 +13,7 @@ import HistoryList from './views/DownloadHistoryList';
 import { invoke } from '@tauri-apps/api/core';
 import { DownloadTask } from '../../services/upload';
 import { useAppBar } from '../contexts/AppBarContext';
+import { useNotification } from '../contexts/NotificationProvider';
 
 
 
@@ -22,6 +23,7 @@ const TransferManager = () => {
     const [loading, setLoading] = useState(false);
 
     const { uploads, downloads } = useAppBar();
+    const { notify } = useNotification();
 
 
     // 获取历史下载记录
@@ -32,6 +34,7 @@ const TransferManager = () => {
             setHistory(historyData);
         } catch (error) {
             console.error('Failed to fetch download history:', error);
+            notify('获取下载历史失败', 'error');
         } finally {
             setLoading(false);
         }
@@ -48,7 +51,9 @@ const TransferManager = () => {
     };
 
     const onRefresh = () => {
-
+        if (tabIndex === 2) {
+            fetchDownloadHistory();
+        }
     }
 
     return (
