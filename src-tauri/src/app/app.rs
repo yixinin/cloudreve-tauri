@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use crate::{
     hc::{
@@ -12,43 +12,24 @@ use crate::{
     },
 };
 use anyhow::Result;
-use redb::{ReadableDatabase, ReadableTable, TableDefinition};
-
-const TABLE_SETTING: TableDefinition<&str, String> = TableDefinition::new("setting");
+use iroh::{Endpoint, SecretKey};
+use sled::Db;
 
 pub struct AppState {
-    pub db: Arc<redb::Database>,
+    pub db: Arc<Db>,
     pub hcm: HttpClientManager,
     pub ct: hc::http_client_manager::ClientType,
+    pub base_url: String,
 }
 
 impl AppState {
     pub fn new() -> Result<Self> {
-        let db = redb::Database::builder().create("app.db")?;
-        // {
-        //     let db = db.begin_write()?;
-        //     let mut id = 1;
-        //     {
-        //         let setting = db.open_table(TABLE_SETTING)?;
-        //         let val = setting.get("id")?;
-
-        //         if let Some(value) = val {
-        //             let id_str = value.value();
-        //             id = id_str.parse().unwrap_or(1);
-        //         }
-        //     }
-        //     {
-        //         let mut setting = db.open_table(TABLE_SETTING)?;
-        //         setting.insert("id", (id + 1).to_string())?;
-        //     }
-
-        //     db.commit()?;
-        //     println!("current id: {}", id);
-        // }
+        let db = sled::open("app.db")?;
         Ok(Self {
             db: Arc::new(db),
             hcm: HttpClientManager::new(),
             ct: hc::http_client_manager::ClientType::Iroh,
+            base_url: String::new(),
         })
     }
 
@@ -56,25 +37,35 @@ impl AppState {
         self.hcm.get_client(self.ct).await
     }
 
+    pub async fn init_base_url(&mut self, base_url: String) -> Result<()> {
+        self.base_url = base_url;
+        self.hcm.init_reqwest_client().await?;
+        self.ct = hc::http_client_manager::ClientType::Reqwest;
+        Ok(())
+    }
+
+    pub async fn init_iroh_endpoint(&mut self, token: &str) -> Result<()> {
+        let token = "endpointaaw67fgj5qswjmgrj26s7mvou7ejojq5ips3iubm4ebyqgjouxyq2ayaf5uhi5dqom5c6l3bobztcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabgkyybqcajaaeg3qaabaaaaaaaaaaaaaaaezpdag";
+        let secret_key = get_or_create_secret();
+        if let Ok(ticket) = dumbpipe::EndpointTicket::from_str(token) {
+            let addr = ticket.endpoint_addr();
+            let builder = Endpoint::builder().secret_key(secret_key);
+            let endpoint = builder.bind().await?;
+            self.hcm.init_iroh_endpoint(endpoint, addr.clone()).await?;
+            self.ct = hc::http_client_manager::ClientType::Iroh;
+            return Ok(());
+        }
+        Err(anyhow::format_err!("invalid token"))
+    }
+
     pub fn gen_id(&self) -> Result<u32> {
         let db = self.db.clone();
-        let txn = db.begin_write()?;
         let mut id = 1;
-        {
-            let setting = txn.open_table(TABLE_SETTING)?;
-            let val = setting.get("id")?;
-
-            if let Some(value) = val {
-                let id_str = value.value();
-                id = id_str.parse().unwrap_or(1);
-            }
+        if let Some(val) = db.get("id")? {
+            let id_str = String::from_utf8(val.to_vec())?;
+            id = id_str.parse().unwrap_or(1);
         }
-        {
-            let mut setting = txn.open_table(TABLE_SETTING)?;
-            setting.insert("id", (id + 1).to_string())?;
-        }
-
-        txn.commit()?;
+        db.insert("id", (id + 1).to_string().as_bytes())?;
         Ok(id)
     }
 
@@ -106,34 +97,32 @@ impl AppState {
     }
     pub fn set_token(&self, token: Token) -> Result<()> {
         let db = self.db.clone();
-        let txn = db.begin_write()?;
-        {
-            let mut setting = txn.open_table(TABLE_SETTING)?;
-            setting.insert("access_token", token.access_token)?;
-            setting.insert("access_expires", token.access_expires.to_string())?;
-            setting.insert("refresh_token", token.refresh_token)?;
-            setting.insert("refresh_expires", token.refresh_expires.to_string())?;
-        }
-
-        txn.commit()?;
+        db.insert("access_token", token.access_token.as_bytes())?;
+        db.insert(
+            "access_expires",
+            token.access_expires.to_string().as_bytes(),
+        )?;
+        db.insert("refresh_token", token.refresh_token.as_bytes())?;
+        db.insert(
+            "refresh_expires",
+            token.refresh_expires.to_string().as_bytes(),
+        )?;
         Ok(())
     }
     pub fn get_addr(&self) -> Result<NetworkSettings> {
         let db = self.db.clone();
-        let txn = db.begin_read()?;
-        let settings = txn.open_table(TABLE_SETTING)?;
-        let addr = if let Some(val) = settings.get("addr")? {
-            val.value()
+        let addr = if let Some(val) = db.get("addr")? {
+            String::from_utf8(val.to_vec())?
         } else {
             String::new()
         };
-        let addr6 = if let Some(val) = settings.get("addr6")? {
-            val.value()
+        let addr6 = if let Some(val) = db.get("addr6")? {
+            String::from_utf8(val.to_vec())?
         } else {
             String::new()
         };
-        let mode = if let Some(val) = settings.get("mode")? {
-            val.value()
+        let mode = if let Some(val) = db.get("mode")? {
+            String::from_utf8(val.to_vec())?
         } else {
             String::new()
         };
@@ -151,46 +140,39 @@ impl AppState {
         mode: NetworkMode,
     ) -> Result<()> {
         let db = self.db.clone();
-        let txn = db.begin_write()?;
-        {
-            let mut setting = txn.open_table(TABLE_SETTING)?;
-            if let Some(value) = addr {
-                setting.insert("addr", value)?;
-            }
-            if let Some(value) = addr6 {
-                setting.insert("addr6", value)?;
-            }
-
-            setting.insert("mode", mode.to_string())?;
+        if let Some(value) = addr {
+            db.insert("addr", value.as_bytes())?;
+        }
+        if let Some(value) = addr6 {
+            db.insert("addr6", value.as_bytes())?;
         }
 
-        txn.commit()?;
+        db.insert("mode", mode.to_string().as_bytes())?;
 
         Ok(())
     }
     pub fn get_settings(&self, keys: Vec<&str>) -> Result<HashMap<String, String>> {
         let db = self.db.clone();
-        let txn = db.begin_read()?;
-        let setting = txn.open_table(TABLE_SETTING)?;
         let mut m = HashMap::with_capacity(keys.len());
         for key in keys {
-            let key = key;
-            if let Some(val) = setting.get(key)? {
-                m.insert(key.to_string(), val.value());
+            if let Some(val) = db.get(key)? {
+                m.insert(key.to_string(), String::from_utf8(val.to_vec())?);
             }
         }
         Ok(m)
     }
     pub fn delete_settings(&self, keys: Vec<&str>) -> Result<()> {
         let db = self.db.clone();
-        let txn = db.begin_write()?;
-        {
-            let mut setting = txn.open_table(TABLE_SETTING)?;
-            for key in keys {
-                setting.remove(key)?;
-            }
+        for key in keys {
+            db.remove(key)?;
         }
-        txn.commit()?;
         Ok(())
     }
+}
+
+fn get_or_create_secret() -> SecretKey {
+    let key = SecretKey::generate(&mut rand::rng());
+    let key_str = hex::encode(key.to_bytes());
+    eprintln!("using secret key {key_str}");
+    key
 }

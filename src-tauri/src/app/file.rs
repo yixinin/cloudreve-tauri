@@ -22,13 +22,13 @@ use crate::proto::Result;
 impl super::AppState {
     pub async fn get_file_source(&self, uris: Vec<String>) -> Result<FileSrouce> {
         let req = GetFileSourceReq { uris: uris };
-        let req = Request::new(Method::PUT, "/file/source").with_body(());
+        let req = Request::new(Method::PUT, &self.base_url, "/file/source").with_body(());
         let resp = self
             .get_client()
             .await?
             .put::<(), proto::Ack<Vec<FileSrouce>>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<Vec<FileSrouce>>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             for v in ack.data.unwrap() {
                 return Ok(v);
@@ -38,11 +38,13 @@ impl super::AppState {
     }
 
     pub async fn delete_lock(&self, tokens: Vec<String>) -> Result<bool> {
-        let req = DeleteTokenReq { tokens };
+        let req = Request::new(Method::DELETE, &self.base_url, "/file/token").with_body(());
         let resp = self
-            .request_json(Method::DELETE, "/file/token", req)
+            .get_client()
+            .await?
+            .delete::<proto::Ack<String>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<String>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(true);
         } else {
@@ -52,10 +54,13 @@ impl super::AppState {
 
     pub async fn restore_file(&self, uris: Vec<String>) -> Result<bool> {
         let req = BatchUrisReq { uris };
+        let req = Request::new(Method::POST, &self.base_url, "/file/restore").with_body(req);
         let resp = self
-            .request_json(Method::POST, "/file/restore", req)
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<String>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<String>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(true);
         } else {
@@ -64,8 +69,13 @@ impl super::AppState {
     }
 
     pub async fn get_files(&self, req: GetFilesReq) -> Result<GetFilesAck> {
-        let resp = self.request_query(Method::GET, "/file", req).await?;
-        let ack = resp.json::<proto::Ack<GetFilesAck>>().await?;
+        let req = Request::new(Method::GET, &self.base_url, "/file").with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .get::<proto::Ack<GetFilesAck>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -79,8 +89,13 @@ impl super::AppState {
             dst: dst.to_string(),
             uris,
         };
-        let resp = self.request_json(Method::POST, "/file/move", req).await?;
-        let ack = resp.json::<proto::Ack<String>>().await?;
+        let req = Request::new(Method::POST, &self.base_url, "/file/move").with_body(req);
+        let resp = self
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<String>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(true);
         } else {
@@ -94,13 +109,21 @@ impl super::AppState {
         soft_delete: bool,
         uris: Vec<String>,
     ) -> Result<Option<DeleteFileAck>> {
-        let req = DeleteFileReq {
-            unlink: unlink,
-            skip_soft_delete: !soft_delete,
-            uris: uris,
-        };
-        let resp = self.request_json(Method::DELETE, "/file", req).await?;
-        let ack = resp.json::<proto::Ack<DeleteFileAck>>().await?;
+        let req = Request::new(
+            Method::DELETE,
+            &self.base_url,
+            &format!(
+                "/file?unlink={}&skip_soft_delete={}&uris={:?}",
+                unlink, !soft_delete, uris
+            ),
+        )
+        .with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .delete::<proto::Ack<DeleteFileAck>>(req)
+            .await?;
+        let ack = resp.into_data();
         match ack.code {
             0 => {
                 return Ok(None);
@@ -119,8 +142,13 @@ impl super::AppState {
             new_name: name,
             uri: uri,
         };
-        let resp = self.request_json(Method::POST, "/file/rename", req).await?;
-        let ack = resp.json::<proto::Ack<FileDetailsInfo>>().await?;
+        let req = Request::new(Method::POST, &self.base_url, "/file/rename").with_body(req);
+        let resp = self
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<FileDetailsInfo>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -129,10 +157,13 @@ impl super::AppState {
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
-        let (resp, addr) = self
-            .request_json_addr(Method::POST, "/file/url", req)
+        let req = Request::new(Method::POST, &self.base_url, "/file/url").with_body(req);
+        let resp = self
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<BatchUrlsAck>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<BatchUrlsAck>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(mut data) = ack.data {
                 let settings = self.get_addr()?;
@@ -142,7 +173,7 @@ impl super::AppState {
                         if let Ok(uri) = Uri::from_str(&url.url) {
                             let url = format!(
                                 "{}{}",
-                                addr.clone().unwrap_or(settings.get_addr()),
+                                settings.get_addr(),
                                 uri.path_and_query().unwrap().as_str()
                             );
                             urls.push(Url { url });
@@ -162,10 +193,18 @@ impl super::AppState {
     }
 
     pub async fn get_thumb_url(&self, uri: String) -> Result<String> {
-        let (resp, addr) = self
-            .request_addr(Method::GET, &format!("/file/thumb?uri={}", uri))
+        let req = Request::new(
+            Method::GET,
+            &self.base_url,
+            &format!("/file/thumb?uri={}", uri),
+        )
+        .with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .get::<proto::Ack<GetThumbURLAck>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<GetThumbURLAck>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
                 if let Ok(uri) = Uri::from_str(&data.url) {
@@ -173,7 +212,7 @@ impl super::AppState {
                     if settings.mode == NetworkMode::P2P {
                         let url = format!(
                             "{}{}",
-                            addr.unwrap_or(settings.get_addr()),
+                            settings.get_addr(),
                             uri.path_and_query().unwrap().as_str()
                         );
                         return Ok(url);
@@ -194,8 +233,13 @@ impl super::AppState {
             err_on_conflict: true,
             uri: uri.to_string(),
         };
-        let resp = self.request_json(Method::POST, "/file/create", req).await?;
-        let ack = resp.json::<proto::Ack<FileInfo>>().await?;
+        let req = Request::new(Method::POST, &self.base_url, "/file/create").with_body(req);
+        let resp = self
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<FileInfo>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -204,12 +248,18 @@ impl super::AppState {
     }
 
     pub async fn get_file_info(&self, uri: &str) -> Result<FileDetailsInfo> {
-        let req = GetFileInfoReq {
-            uri: uri.to_string(),
-            extended: true,
-        };
-        let resp = self.request_json(Method::GET, "/file/info", req).await?;
-        let ack = resp.json::<proto::Ack<FileDetailsInfo>>().await?;
+        let req = Request::new(
+            Method::GET,
+            &self.base_url,
+            &format!("/file/info?uri={}&extended=true", uri),
+        )
+        .with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .get::<proto::Ack<FileDetailsInfo>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -236,8 +286,13 @@ impl super::AppState {
             mime_type: mime_type.to_string(),
         };
 
-        let response = self.request_json(Method::PUT, "/file/upload", req).await?;
-        let ack = response.json::<proto::Ack<UploadSessionAck>>().await?;
+        let req = Request::new(Method::PUT, &self.base_url, "/file/upload").with_body(req);
+        let response = self
+            .get_client()
+            .await?
+            .put::<_, proto::Ack<UploadSessionAck>>(req)
+            .await?;
+        let ack = response.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         }

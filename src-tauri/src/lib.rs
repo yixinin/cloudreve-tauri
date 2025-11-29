@@ -1,4 +1,6 @@
-use http::Version;
+use crate::hc::http_client_manager::HttpClientWrapper;
+use crate::hc::Request;
+use http::{Method, Version};
 use std::{
     collections::{HashMap, HashSet},
     path::{self},
@@ -111,11 +113,10 @@ async fn set_network_settings(
     app.set_addr(addr, addr6, mode)?;
     let settings = app.get_addr()?;
     if settings.mode == NetworkMode::P2P {
-        let client = app.get_client(&settings.addr, true).await?;
-        let url = settings.get_url(Some(settings.addr.clone()), "/site/config/basic");
-        let resp = client.get(url).version(Version::HTTP_3).send().await?;
-        app.hc_pool.put(client);
-        println!("get basic info: {}", resp.text().await?);
+        let client = app.get_client().await?;
+        let req = Request::new(Method::GET, &app.base_url, "/site/config/basic").with_body(());
+        let resp = client.get::<proto::Ack<()>>(req).await?;
+        println!("get basic info: {:?}", resp.into_data());
     }
     return Ok(settings);
 }
@@ -600,12 +601,12 @@ async fn get_download_history(
     // 这里返回模拟数据作为示例
     Ok(vec![DownloadHistoryItem {
         id: 1,
-        file_name: "example.jpg",
-        file_path: "/downloads/example.jpg",
-        url: "https://example.com/example.jpg",
-        status: "completed",
+        file_name: "example.jpg".to_string(),
+        file_path: "/downloads/example.jpg".to_string(),
+        url: "https://example.com/example.jpg".to_string(),
+        status: "completed".to_string(),
         progress: 100,
         size: 1024 * 1024,
-        downloaded_at: "2024-06-18T10:30:00Z",
+        downloaded_at: "2024-06-18T10:30:00Z".to_string(),
     }])
 }

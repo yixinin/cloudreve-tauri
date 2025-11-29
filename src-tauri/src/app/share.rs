@@ -1,4 +1,6 @@
-use reqwest::Method;
+use crate::hc::http_client_manager::HttpClientWrapper;
+use crate::hc::Request;
+use http::Method;
 
 use crate::proto::{
     self,
@@ -31,11 +33,13 @@ impl super::AppState {
         if expire > 0 {
             req.expire = Some(expire);
         }
-        let response = self.request_json(Method::PUT, "/share", req).await?;
-        let body = response.text().await?;
-        println!("response: {}", &body);
-
-        let ack = serde_json::from_str::<proto::Ack<String>>(&body)?;
+        let req = Request::new(Method::PUT, &self.base_url, "/share").with_body(req);
+        let response = self
+            .get_client()
+            .await?
+            .put::<_, proto::Ack<String>>(req)
+            .await?;
+        let ack = response.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -44,12 +48,18 @@ impl super::AppState {
     }
 
     pub async fn get_shares(&self, order_direction: &str) -> Result<GetSharesAck> {
-        let req = GetSharesReq {
-            page_size: 50,
-            order_direction: order_direction.to_string(),
-        };
-        let resp = self.request_query(Method::GET, "/share", req).await?;
-        let ack = resp.json::<proto::Ack<GetSharesAck>>().await?;
+        let req = Request::new(
+            Method::GET,
+            &self.base_url,
+            &format!("/share?page_size=50&order_direction={}", order_direction),
+        )
+        .with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .get::<proto::Ack<GetSharesAck>>(req)
+            .await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -58,10 +68,14 @@ impl super::AppState {
     }
 
     pub async fn delete_share(&self, id: &str) -> Result<bool> {
+        let req =
+            Request::new(Method::DELETE, &self.base_url, &format!("/share/{}", id)).with_body(());
         let resp = self
-            .request(Method::DELETE, &format!("/share/{}", id))
+            .get_client()
+            .await?
+            .delete::<proto::Ack<String>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<String>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(true);
         } else {
@@ -88,10 +102,14 @@ impl super::AppState {
         if expire > 0 {
             req.expire = Some(expire)
         }
+        let req =
+            Request::new(Method::POST, &self.base_url, &format!("/share/{}", id)).with_body(req);
         let resp = self
-            .request_json(Method::POST, &format!("/share/{}", id), req)
+            .get_client()
+            .await?
+            .post::<_, proto::Ack<String>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<String>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {
@@ -100,13 +118,18 @@ impl super::AppState {
     }
 
     pub async fn get_share_info(&self, id: &str, owner_extended: bool) -> Result<ShareInfo> {
+        let req = Request::new(
+            Method::GET,
+            &self.base_url,
+            &format!("/share/info/{}?owner_extended={}", id, owner_extended),
+        )
+        .with_body(());
         let resp = self
-            .request(
-                Method::GET,
-                &format!("/share/info/{}?owner_extended={}", id, owner_extended),
-            )
+            .get_client()
+            .await?
+            .get::<proto::Ack<ShareInfo>>(req)
             .await?;
-        let ack = resp.json::<proto::Ack<ShareInfo>>().await?;
+        let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());
         } else {

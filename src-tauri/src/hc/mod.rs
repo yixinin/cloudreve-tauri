@@ -4,7 +4,7 @@ pub mod quinn_endpoint;
 pub mod std;
 pub mod url;
 
-use ::std::str::FromStr;
+use ::std::{fmt::format, str::FromStr};
 
 use http::Method;
 use serde::de::DeserializeOwned;
@@ -49,10 +49,10 @@ pub struct Request<T> {
 }
 
 impl<T> Request<T> {
-    pub fn new(method: Method, url: String) -> Self {
+    pub fn new(method: Method, base_url: &str, path: &str) -> Self {
         Self {
             method,
-            url,
+            url: format!("{}{}", base_url, path),
             headers: http::HeaderMap::new(),
             body: None,
         }
