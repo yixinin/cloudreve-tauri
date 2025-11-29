@@ -1,22 +1,25 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    hc::{self, h3, pool::HttpClient},
+    hc::{
+        self,
+        http_client_manager::{HttpClientDispatcher, HttpClientManager},
+        HttpClient,
+    },
     proto::{
         login::Token,
         settings::{NetworkMode, NetworkSettings},
     },
-    rendezvouser::SignalClient,
 };
 use anyhow::Result;
-use http::request;
-use redb::{ReadableTable, TableDefinition};
+use redb::{ReadableDatabase, ReadableTable, TableDefinition};
 
 const TABLE_SETTING: TableDefinition<&str, String> = TableDefinition::new("setting");
 
 pub struct AppState {
     pub db: Arc<redb::Database>,
-    pub hc_pool: hc::pool::ClientPool,
+    pub hcm: HttpClientManager,
+    pub ct: hc::http_client_manager::ClientType,
 }
 
 impl AppState {
@@ -42,28 +45,15 @@ impl AppState {
         //     db.commit()?;
         //     println!("current id: {}", id);
         // }
-        let hc_pool = hc::pool::ClientPool::new(20);
         Ok(Self {
             db: Arc::new(db),
-            hc_pool,
+            hcm: HttpClientManager::new(),
+            ct: hc::http_client_manager::ClientType::Iroh,
         })
     }
 
-    pub fn reset_pool(&mut self) {
-        self.hc_pool = hc::pool::ClientPool::new(20);
-    }
-
-    pub async fn get_client(&self, addr: &str, p2p: bool) -> Result<HttpClient> {
-        match self.hc_pool.get(p2p) {
-            Ok(client) => Ok(client),
-            Err(e) => {
-                if p2p {
-                    let client = h3::get_client(addr).await?;
-                    return Ok(client);
-                }
-                Err(e)
-            }
-        }
+    pub async fn get_client(&self) -> Result<HttpClientDispatcher> {
+        self.hcm.get_client(self.ct).await
     }
 
     pub fn gen_id(&self) -> Result<u32> {
@@ -202,150 +192,5 @@ impl AppState {
         }
         txn.commit()?;
         Ok(())
-    }
-
-    pub async fn request_json_addr<T>(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-        req: T,
-    ) -> Result<(reqwest::Response, Option<String>)>
-    where
-        T: serde::Serialize,
-    {
-        let network = self.get_addr()?;
-        let addr = network.get_addr();
-        let client = self
-            .get_client(&addr, network.mode == NetworkMode::P2P)
-            .await?;
-        let addr = client.get_addr();
-        let url = network.get_url(addr.clone(), path);
-        let mut builder = client.request(method, url);
-        if network.mode == NetworkMode::P2P {
-            builder = builder.version(http::Version::HTTP_3)
-        }
-        let token = if let Ok(token) = self.get_token() {
-            Ok(token)
-        } else {
-            self.refresh_token().await
-        }?;
-        builder = builder.header("authorization", token.access_token);
-        let resp = builder.json(&req).send().await?;
-        self.hc_pool.put(client);
-        Ok((resp, addr))
-    }
-    pub async fn request_json<T>(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-        req: T,
-    ) -> Result<reqwest::Response>
-    where
-        T: serde::Serialize,
-    {
-        let network = self.get_addr()?;
-        let addr = network.get_addr();
-        let client = self
-            .get_client(&addr, network.mode == NetworkMode::P2P)
-            .await?;
-        let url = network.get_url(client.get_addr(), path);
-        let mut builder = client.request(method, url);
-        if network.mode == NetworkMode::P2P {
-            builder = builder.version(http::Version::HTTP_3)
-        }
-        let token = if let Ok(token) = self.get_token() {
-            Ok(token)
-        } else {
-            self.refresh_token().await
-        }?;
-        builder = builder.header("authorization", token.access_token);
-        let resp = builder.json(&req).send().await?;
-        self.hc_pool.put(client);
-        Ok(resp)
-    }
-    pub async fn request_query<T>(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-        req: T,
-    ) -> Result<reqwest::Response>
-    where
-        T: serde::Serialize,
-    {
-        let network = self.get_addr()?;
-        let addr = network.get_addr();
-
-        let client = self
-            .get_client(&addr, network.mode == NetworkMode::P2P)
-            .await
-            .map_err(|e| anyhow::format_err!("get client error: {}", e))?;
-        let url = network.get_url(client.get_addr(), path);
-        let mut builder = client.request(method, url);
-        if network.mode == NetworkMode::P2P {
-            builder = builder.version(http::Version::HTTP_3)
-        }
-        let token = if let Ok(token) = self.get_token() {
-            Ok(token)
-        } else {
-            self.refresh_token().await
-        }?;
-        builder = builder.header("authorization", token.access_token);
-        let resp = builder
-            .query(&req)
-            .send()
-            .await
-            .map_err(|e| anyhow::format_err!("send request error: {}", e))?;
-        self.hc_pool.put(client);
-        Ok(resp)
-    }
-
-    pub async fn request(&self, method: reqwest::Method, path: &str) -> Result<reqwest::Response> {
-        let network = self.get_addr()?;
-        let addr = network.get_addr();
-
-        let client = self
-            .get_client(&addr, network.mode == NetworkMode::P2P)
-            .await?;
-        let url = network.get_url(client.get_addr(), path);
-        let mut builder = client.request(method, url);
-        if network.mode == NetworkMode::P2P {
-            builder = builder.version(http::Version::HTTP_3)
-        }
-        let token = if let Ok(token) = self.get_token() {
-            Ok(token)
-        } else {
-            self.refresh_token().await
-        }?;
-        builder = builder.header("authorization", token.access_token);
-        let resp = builder.send().await?;
-        self.hc_pool.put(client);
-        Ok(resp)
-    }
-    pub async fn request_addr(
-        &self,
-        method: reqwest::Method,
-        path: &str,
-    ) -> Result<(reqwest::Response, Option<String>)> {
-        let network = self.get_addr()?;
-        let addr = network.get_addr();
-
-        let client = self
-            .get_client(&addr, network.mode == NetworkMode::P2P)
-            .await?;
-        let addr = client.get_addr();
-        let url = network.get_url(addr.clone(), path);
-        let mut builder = client.request(method, url);
-        if network.mode == NetworkMode::P2P {
-            builder = builder.version(http::Version::HTTP_3)
-        }
-        let token = if let Ok(token) = self.get_token() {
-            Ok(token)
-        } else {
-            self.refresh_token().await
-        }?;
-        builder = builder.header("authorization", token.access_token);
-        let resp = builder.send().await?;
-        self.hc_pool.put(client);
-        Ok((resp, addr))
     }
 }

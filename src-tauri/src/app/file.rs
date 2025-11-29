@@ -3,14 +3,17 @@ use std::str::FromStr;
 use http::Uri;
 use reqwest::Method;
 
-use crate::proto::{
-    self,
-    file::{DeleteFileAck, DeleteTokenReq},
-    settings::NetworkMode,
-    storage::{
-        BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
-        FileSrouce, GetFileInfoReq, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck,
-        MoveReq, RenameReq, UploadSessionAck, UploadSessionReq, Url,
+use crate::{
+    hc::{http_client_manager::HttpClientWrapper, Request},
+    proto::{
+        self,
+        file::{DeleteFileAck, DeleteTokenReq},
+        settings::NetworkMode,
+        storage::{
+            BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
+            FileSrouce, GetFileInfoReq, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck,
+            MoveReq, RenameReq, UploadSessionAck, UploadSessionReq, Url,
+        },
     },
 };
 
@@ -19,7 +22,12 @@ use crate::proto::Result;
 impl super::AppState {
     pub async fn get_file_source(&self, uris: Vec<String>) -> Result<FileSrouce> {
         let req = GetFileSourceReq { uris: uris };
-        let resp = self.request_json(Method::PUT, "/file/source", req).await?;
+        let req = Request::new(Method::PUT, "/file/source").with_body(());
+        let resp = self
+            .get_client()
+            .await?
+            .put::<(), proto::Ack<Vec<FileSrouce>>>(req)
+            .await?;
         let ack = resp.json::<proto::Ack<Vec<FileSrouce>>>().await?;
         if ack.code == 0 {
             for v in ack.data.unwrap() {

@@ -30,7 +30,6 @@ pub mod hc;
 pub mod media;
 pub mod net;
 pub mod proto;
-pub mod rendezvouser;
 pub mod transfer;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

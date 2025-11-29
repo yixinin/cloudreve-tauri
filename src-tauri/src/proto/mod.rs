@@ -7,10 +7,8 @@ pub mod storage;
 
 pub use error::*;
 
-use reqwest::{Client, Method, Version};
 use serde::{Deserialize, Serialize};
 
-use crate::rendezvouser;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Ack<T> {
     pub code: i64,
