@@ -42,7 +42,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let app_state = app::AppState::new()?;
+            let app_handle = app.handle();
+            let app_state = app::AppState::new(&app_handle)?;
             app.manage(Mutex::new(app_state));
             #[cfg(dev)]
             {
@@ -109,10 +110,11 @@ async fn set_network_settings(
     addr6: Option<String>,
     mode: NetworkMode,
 ) -> JsonResult<NetworkSettings> {
-    let app = state.lock().await;
+    let mut app = state.lock().await;
     app.set_addr(addr, addr6, mode)?;
     let settings = app.get_addr()?;
     if settings.mode == NetworkMode::P2P {
+        app.init_iroh_endpoint().await?;
         let client = app.get_client().await?;
         let req = Request::new(Method::GET, &app.base_url, "/site/config/basic").with_body(());
         let resp = client.get::<proto::Ack<()>>(req).await?;

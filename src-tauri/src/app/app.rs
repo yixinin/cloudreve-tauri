@@ -14,6 +14,7 @@ use crate::{
 use anyhow::Result;
 use iroh::{Endpoint, SecretKey};
 use sled::Db;
+use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Db>,
@@ -23,8 +24,13 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new() -> Result<Self> {
-        let db = sled::open("app.db")?;
+    pub fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
+        // 获取应用数据目录，确保数据库文件存储在正确位置
+        let app_data_dir = app_handle.path().app_data_dir()?;
+        let db_path = app_data_dir.join("app.db");
+
+        // 使用sled的默认配置，让sled自动处理数据库文件的创建和打开
+        let db = sled::open(db_path)?;
         Ok(Self {
             db: Arc::new(db),
             hcm: HttpClientManager::new(),
@@ -44,7 +50,7 @@ impl AppState {
         Ok(())
     }
 
-    pub async fn init_iroh_endpoint(&mut self, token: &str) -> Result<()> {
+    pub async fn init_iroh_endpoint(&mut self) -> Result<()> {
         let token = "endpointaaw67fgj5qswjmgrj26s7mvou7ejojq5ips3iubm4ebyqgjouxyq2ayaf5uhi5dqom5c6l3bobztcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabgkyybqcajaaeg3qaabaaaaaaaaaaaaaaaezpdag";
         let secret_key = get_or_create_secret();
         if let Ok(ticket) = dumbpipe::EndpointTicket::from_str(token) {
