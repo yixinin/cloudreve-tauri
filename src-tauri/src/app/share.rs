@@ -33,7 +33,7 @@ impl super::AppState {
         if expire > 0 {
             req.expire = Some(expire);
         }
-        let req = Request::new(Method::PUT, &self.base_url, "/share").with_body(req);
+        let req = self.request_with_body(Method::PUT, "/share", req)?;
         let response = self
             .get_client()
             .await?
@@ -48,12 +48,14 @@ impl super::AppState {
     }
 
     pub async fn get_shares(&self, order_direction: &str) -> Result<GetSharesAck> {
-        let req = Request::new(
+        let req = self.request_with_query(
             Method::GET,
-            &self.base_url,
-            &format!("/share?page_size=50&order_direction={}", order_direction),
-        )
-        .with_body(());
+            "/share",
+            [("page_size", "50"), ("order_direction", order_direction)]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashMap<_, _>>(),
+        )?;
         let resp = self
             .get_client()
             .await?
@@ -68,8 +70,7 @@ impl super::AppState {
     }
 
     pub async fn delete_share(&self, id: &str) -> Result<bool> {
-        let req =
-            Request::new(Method::DELETE, &self.base_url, &format!("/share/{}", id)).with_body(());
+        let req = self.request(Method::DELETE, &format!("/share/{}", id))?;
         let resp = self
             .get_client()
             .await?
@@ -102,8 +103,7 @@ impl super::AppState {
         if expire > 0 {
             req.expire = Some(expire)
         }
-        let req =
-            Request::new(Method::POST, &self.base_url, &format!("/share/{}", id)).with_body(req);
+        let req = self.request_with_body(Method::POST, &format!("/share/{}", id), req)?;
         let resp = self
             .get_client()
             .await?
@@ -118,12 +118,14 @@ impl super::AppState {
     }
 
     pub async fn get_share_info(&self, id: &str, owner_extended: bool) -> Result<ShareInfo> {
-        let req = Request::new(
+        let req = self.request_with_query(
             Method::GET,
-            &self.base_url,
-            &format!("/share/info/{}?owner_extended={}", id, owner_extended),
-        )
-        .with_body(());
+            &format!("/share/info/{}", id),
+            [("owner_extended", owner_extended.to_string())]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashMap<_, _>>(),
+        )?;
         let resp = self
             .get_client()
             .await?

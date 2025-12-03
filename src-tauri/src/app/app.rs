@@ -4,7 +4,7 @@ use crate::{
     hc::{
         self,
         http_client_manager::{HttpClientDispatcher, HttpClientManager},
-        HttpClient,
+        HttpClient, Request,
     },
     proto::{
         login::Token,
@@ -12,8 +12,9 @@ use crate::{
     },
 };
 use anyhow::Result;
+use http::Method;
 use iroh::{Endpoint, SecretKey};
-use sled::Db;
+use sled::{Db, Mode};
 use tauri::Manager;
 
 pub struct AppState {
@@ -34,34 +35,80 @@ impl AppState {
         Ok(Self {
             db: Arc::new(db),
             hcm: HttpClientManager::new(),
-            ct: hc::http_client_manager::ClientType::Iroh,
+            ct: hc::http_client_manager::ClientType::Reqwest,
             base_url: String::new(),
         })
+    }
+
+    pub fn request(&self, method: Method, url: &str) -> Result<Request<()>> {
+        let mut req = Request::new(method, &self.base_url, url);
+        req = req.with_header(
+            "Authorization",
+            &format!("Bearer {}", self.get_token()?.access_token),
+        );
+        Ok(req.with_body(()))
+    }
+    pub fn request_with_query<T>(&self, method: Method, url: &str, query: T) -> Result<Request<()>>
+    where
+        T: serde::Serialize,
+    {
+        let mut req = Request::new(
+            method,
+            &self.base_url,
+            &format!("{}?{}", url, serde_urlencoded::to_string(query)?),
+        );
+        req = req.with_header(
+            "Authorization",
+            &format!("Bearer {}", self.get_token()?.access_token),
+        );
+        Ok(req)
+    }
+
+    pub fn request_with_body<T>(&self, method: Method, url: &str, body: T) -> Result<Request<T>>
+    where
+        T: serde::Serialize,
+    {
+        let mut req = Request::new(method, &self.base_url, url);
+        req = req.with_header(
+            "Authorization",
+            &format!("Bearer {}", self.get_token()?.access_token),
+        );
+        Ok(req.with_body(body))
     }
 
     pub async fn get_client(&self) -> Result<HttpClientDispatcher> {
         self.hcm.get_client(self.ct).await
     }
 
-    pub async fn init_base_url(&mut self, base_url: String) -> Result<()> {
-        self.base_url = base_url;
-        self.hcm.init_reqwest_client().await?;
+    pub fn init_base_url(&mut self, base_url: &str) -> Result<()> {
+        self.base_url = format!("{}/api/v4", base_url);
+        println!("init base url: {}", &self.base_url);
+        self.hcm.init_reqwest_client()?;
         self.ct = hc::http_client_manager::ClientType::Reqwest;
         Ok(())
+    }
+
+    fn parse_subdomain(subdomain: &str) -> anyhow::Result<iroh::EndpointAddr> {
+        // first try to parse as a endpoint id
+        if let Ok(endpoint_id) = iroh::EndpointId::from_str(subdomain) {
+            return Ok(iroh::EndpointAddr::new(endpoint_id));
+        }
+        // then try to parse as a endpoint ticket
+        if let Ok(ticket) = dumbpipe::EndpointTicket::from_str(subdomain) {
+            return Ok(ticket.endpoint_addr().clone());
+        }
+        Err(anyhow::anyhow!("invalid subdomain"))
     }
 
     pub async fn init_iroh_endpoint(&mut self) -> Result<()> {
         let token = "endpointaaw67fgj5qswjmgrj26s7mvou7ejojq5ips3iubm4ebyqgjouxyq2ayaf5uhi5dqom5c6l3bobztcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabgkyybqcajaaeg3qaabaaaaaaaaaaaaaaaezpdag";
         let secret_key = get_or_create_secret();
-        if let Ok(ticket) = dumbpipe::EndpointTicket::from_str(token) {
-            let addr = ticket.endpoint_addr();
-            let builder = Endpoint::builder().secret_key(secret_key);
-            let endpoint = builder.bind().await?;
-            self.hcm.init_iroh_endpoint(endpoint, addr.clone()).await?;
-            self.ct = hc::http_client_manager::ClientType::Iroh;
-            return Ok(());
-        }
-        Err(anyhow::format_err!("invalid token"))
+        let addr = Self::parse_subdomain(token)?;
+        let builder = Endpoint::builder().secret_key(secret_key);
+        let endpoint = builder.bind().await?;
+        self.hcm.init_iroh_endpoint(endpoint, addr.clone()).await?;
+        self.ct = hc::http_client_manager::ClientType::Iroh;
+        return Ok(());
     }
 
     pub fn gen_id(&self) -> Result<u32> {
@@ -115,7 +162,7 @@ impl AppState {
         )?;
         Ok(())
     }
-    pub fn get_addr(&self) -> Result<NetworkSettings> {
+    pub fn get_network_settings(&self) -> Result<NetworkSettings> {
         let db = self.db.clone();
         let addr = if let Some(val) = db.get("addr")? {
             String::from_utf8(val.to_vec())?

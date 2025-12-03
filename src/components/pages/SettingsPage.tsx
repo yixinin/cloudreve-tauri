@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Switch, CircularProgress, LinearProgress, Divider, List, ListItem, ListItemText, Chip } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { Box, Typography, Paper, Switch, LinearProgress, Divider, List, ListItem, ListItemText, Chip } from '@mui/material';
 import { getSyncStatus, toggleSync, getSyncProgress } from '../../services/syncService';
 
 const SettingsPage = () => {
@@ -10,7 +9,6 @@ const SettingsPage = () => {
   const [syncedFiles, setSyncedFiles] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
   const [lastSyncTime, setLastSyncTime] = useState('从未同步');
-  const navigate = useNavigate();
 
   // 初始化时获取同步状态
   useEffect(() => {
@@ -30,9 +28,9 @@ const SettingsPage = () => {
 
   // 监听同步进度
   useEffect(() => {
-    let interval;
+    let intervalId: number | null = null;
     if (syncEnabled && syncStatus === 'syncing') {
-      interval = setInterval(async () => {
+      intervalId = setInterval(async () => {
         try {
           const progress = await getSyncProgress();
           setSyncProgress(progress.percentage);
@@ -45,7 +43,12 @@ const SettingsPage = () => {
       }, 1000);
     }
 
-    return () => clearInterval(interval);
+    return () => {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
   }, [syncEnabled, syncStatus]);
 
   // 切换同步开关

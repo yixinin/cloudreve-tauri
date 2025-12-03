@@ -46,7 +46,7 @@ const VideoPlayerPage: React.FC = () => {
     const [showControls, setShowControls] = useState(true);
     const [controlsTimeout, setControlsTimeout] = useState<number>();
     const [isLoading, setIsLoading] = useState(true);
-    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isFullscreen] = useState(false);
     const debounceTimerRef = useRef<number | null>(null);
 
     // 自定义防抖函数

@@ -114,8 +114,8 @@ const UserMenu = () => {
 
                 {/* 2. 设置 */}
                 <MenuItem onClick={handleSettings}>                    <ListItemIcon>
-                        <SettingsIcon fontSize="small" />
-                    </ListItemIcon>
+                    <SettingsIcon fontSize="small" />
+                </ListItemIcon>
                     <ListItemText primary="设置" />
                 </MenuItem>
 

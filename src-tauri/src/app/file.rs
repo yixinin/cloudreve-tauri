@@ -4,15 +4,15 @@ use http::Uri;
 use reqwest::Method;
 
 use crate::{
-    hc::{http_client_manager::HttpClientWrapper, Request},
+    hc::http_client_manager::HttpClientWrapper,
     proto::{
         self,
-        file::{DeleteFileAck, DeleteTokenReq},
+        file::DeleteFileAck,
         settings::NetworkMode,
         storage::{
             BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
-            FileSrouce, GetFileInfoReq, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck,
-            MoveReq, RenameReq, UploadSessionAck, UploadSessionReq, Url,
+            FileSrouce, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck, MoveReq,
+            RenameReq, UploadSessionAck, UploadSessionReq, Url,
         },
     },
 };
@@ -22,7 +22,7 @@ use crate::proto::Result;
 impl super::AppState {
     pub async fn get_file_source(&self, uris: Vec<String>) -> Result<FileSrouce> {
         let req = GetFileSourceReq { uris: uris };
-        let req = Request::new(Method::PUT, &self.base_url, "/file/source").with_body(());
+        let req = self.request_with_query(Method::PUT, "/file/source", req)?;
         let resp = self
             .get_client()
             .await?
@@ -38,7 +38,11 @@ impl super::AppState {
     }
 
     pub async fn delete_lock(&self, tokens: Vec<String>) -> Result<bool> {
-        let req = Request::new(Method::DELETE, &self.base_url, "/file/token").with_body(());
+        let req = self.request_with_query(
+            Method::DELETE,
+            "/file/token",
+            proto::file::DeleteTokenReq { tokens },
+        )?;
         let resp = self
             .get_client()
             .await?
@@ -54,7 +58,7 @@ impl super::AppState {
 
     pub async fn restore_file(&self, uris: Vec<String>) -> Result<bool> {
         let req = BatchUrisReq { uris };
-        let req = Request::new(Method::POST, &self.base_url, "/file/restore").with_body(req);
+        let req = self.request_with_body(Method::POST, "/file/restore", req)?;
         let resp = self
             .get_client()
             .await?
@@ -69,7 +73,7 @@ impl super::AppState {
     }
 
     pub async fn get_files(&self, req: GetFilesReq) -> Result<GetFilesAck> {
-        let req = Request::new(Method::GET, &self.base_url, "/file").with_body(());
+        let req = self.request_with_query(Method::GET, "/file", req)?;
         let resp = self
             .get_client()
             .await?
@@ -89,7 +93,7 @@ impl super::AppState {
             dst: dst.to_string(),
             uris,
         };
-        let req = Request::new(Method::POST, &self.base_url, "/file/move").with_body(req);
+        let req = self.request_with_body(Method::POST, "/file/move", req)?;
         let resp = self
             .get_client()
             .await?
@@ -109,15 +113,15 @@ impl super::AppState {
         soft_delete: bool,
         uris: Vec<String>,
     ) -> Result<Option<DeleteFileAck>> {
-        let req = Request::new(
+        let req = self.request_with_query(
             Method::DELETE,
-            &self.base_url,
-            &format!(
-                "/file?unlink={}&skip_soft_delete={}&uris={:?}",
-                unlink, !soft_delete, uris
-            ),
-        )
-        .with_body(());
+            "/file",
+            DeleteFileReq {
+                unlink,
+                skip_soft_delete: !soft_delete,
+                uris,
+            },
+        )?;
         let resp = self
             .get_client()
             .await?
@@ -142,7 +146,7 @@ impl super::AppState {
             new_name: name,
             uri: uri,
         };
-        let req = Request::new(Method::POST, &self.base_url, "/file/rename").with_body(req);
+        let req = self.request_with_body(Method::POST, "/file/rename", req)?;
         let resp = self
             .get_client()
             .await?
@@ -157,7 +161,7 @@ impl super::AppState {
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
-        let req = Request::new(Method::POST, &self.base_url, "/file/url").with_body(req);
+        let req = self.request_with_body(Method::POST, "/file/url", req)?;
         let resp = self
             .get_client()
             .await?
@@ -166,7 +170,7 @@ impl super::AppState {
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(mut data) = ack.data {
-                let settings = self.get_addr()?;
+                let settings = self.get_network_settings()?;
                 if settings.mode == NetworkMode::P2P {
                     let mut urls = Vec::with_capacity(data.urls.len());
                     for (_, url) in data.urls.iter().enumerate() {
@@ -193,12 +197,11 @@ impl super::AppState {
     }
 
     pub async fn get_thumb_url(&self, uri: String) -> Result<String> {
-        let req = Request::new(
+        let req = self.request_with_query(
             Method::GET,
-            &self.base_url,
-            &format!("/file/thumb?uri={}", uri),
-        )
-        .with_body(());
+            "/file/thumb",
+            std::collections::HashMap::from([("uri", uri)]),
+        )?;
         let resp = self
             .get_client()
             .await?
@@ -208,7 +211,7 @@ impl super::AppState {
         if ack.code == 0 {
             if let Some(data) = ack.data {
                 if let Ok(uri) = Uri::from_str(&data.url) {
-                    let settings = self.get_addr()?;
+                    let settings = self.get_network_settings()?;
                     if settings.mode == NetworkMode::P2P {
                         let url = format!(
                             "{}{}",
@@ -233,7 +236,7 @@ impl super::AppState {
             err_on_conflict: true,
             uri: uri.to_string(),
         };
-        let req = Request::new(Method::POST, &self.base_url, "/file/create").with_body(req);
+        let req = self.request_with_body(Method::POST, "/file/create", req)?;
         let resp = self
             .get_client()
             .await?
@@ -248,12 +251,14 @@ impl super::AppState {
     }
 
     pub async fn get_file_info(&self, uri: &str) -> Result<FileDetailsInfo> {
-        let req = Request::new(
+        let req = self.request_with_query(
             Method::GET,
-            &self.base_url,
-            &format!("/file/info?uri={}&extended=true", uri),
-        )
-        .with_body(());
+            "/file/info",
+            std::collections::HashMap::from([
+                ("uri", uri.to_string()),
+                ("extended", "true".to_string()),
+            ]),
+        )?;
         let resp = self
             .get_client()
             .await?
@@ -286,7 +291,7 @@ impl super::AppState {
             mime_type: mime_type.to_string(),
         };
 
-        let req = Request::new(Method::PUT, &self.base_url, "/file/upload").with_body(req);
+        let req = self.request_with_body(Method::PUT, "/file/upload", req)?;
         let response = self
             .get_client()
             .await?

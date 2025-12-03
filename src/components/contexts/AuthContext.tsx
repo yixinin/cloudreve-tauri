@@ -1,6 +1,6 @@
 // src/contexts/AuthContext.tsx
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { LoginAck, User, userLogout } from '../../services/userService';
+import { User, userLogout } from '../../services/userService';
 import { getStorageInfo } from '../../services/fileService';
 import { useNavigate } from 'react-router-dom';
 

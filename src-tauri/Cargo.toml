@@ -18,7 +18,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.12.24", features = [
+    "json",
+    "rustls-tls",
+], default-features = false }
 tauri = { version = "2.9", features = [] }
 tauri-plugin-fs = "2.4"
 tauri-plugin-opener = "2.5"

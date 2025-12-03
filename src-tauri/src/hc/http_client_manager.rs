@@ -155,7 +155,7 @@ pub enum HttpClientDispatcher {
 pub struct HttpClientManager {
     iroh_endpoint: Arc<Mutex<Option<Endpoint>>>,
     iroh_addr: Option<EndpointAddr>,
-    reqwest_client: Arc<Option<ReqwestClientWrapper>>,
+    reqwest_client: Arc<Option<ReqwestClient>>,
 }
 
 impl HttpClientManager {
@@ -174,17 +174,15 @@ impl HttpClientManager {
         endpoint: Endpoint,
         addr: EndpointAddr,
     ) -> Result<()> {
-        *self.iroh_endpoint.lock().await = Some(endpoint);
+        self.iroh_endpoint = Arc::new(Mutex::new(Some(endpoint)));
         self.iroh_addr = Some(addr);
         Ok(())
     }
 
     // 初始化Reqwest客户端
-    pub async fn init_reqwest_client(&mut self) -> Result<()> {
+    pub fn init_reqwest_client(&mut self) -> Result<()> {
         let client = ReqwestClient::new()?;
-        *Arc::get_mut(&mut self.reqwest_client)
-            .ok_or_else(|| anyhow!("Failed to get mutable reference"))? =
-            Some(ReqwestClientWrapper(client));
+        self.reqwest_client = Arc::new(Some(client));
         Ok(())
     }
 
@@ -216,7 +214,8 @@ impl HttpClientManager {
                     .as_ref()
                     .clone()
                     .ok_or_else(|| anyhow!("Reqwest client not initialized"))?;
-                Ok(HttpClientDispatcher::Reqwest(reqwest_client))
+                let wrapper = ReqwestClientWrapper(reqwest_client);
+                Ok(HttpClientDispatcher::Reqwest(wrapper))
             }
         }
     }

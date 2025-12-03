@@ -43,7 +43,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle();
-            let app_state = app::AppState::new(&app_handle)?;
+            let mut app_state = app::AppState::new(&app_handle)?;
+
+            let settings = app_state.get_network_settings()?;
+            if settings.mode != NetworkMode::P2P {
+                app_state.init_base_url(&settings.get_addr())?;
+            }
+
             app.manage(Mutex::new(app_state));
             #[cfg(dev)]
             {
@@ -98,9 +104,21 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn toggle_fullscreen(window: tauri::Window) {
+fn toggle_fullscreen(window: tauri::Window) -> crate::proto::Result<()> {
     let is_fullscreen = window.is_fullscreen().unwrap_or(false);
-    window.set_fullscreen(!is_fullscreen).unwrap();
+
+    #[cfg(target_os = "android")]
+    {
+        // Android doesn't support programmatic fullscreen toggle via this API
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        window.set_fullscreen(!is_fullscreen).unwrap_or(());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -112,7 +130,9 @@ async fn set_network_settings(
 ) -> JsonResult<NetworkSettings> {
     let mut app = state.lock().await;
     app.set_addr(addr, addr6, mode)?;
-    let settings = app.get_addr()?;
+    let settings = app.get_network_settings()?;
+    let addr = settings.get_addr();
+    app.init_base_url(&addr)?;
     if settings.mode == NetworkMode::P2P {
         app.init_iroh_endpoint().await?;
         let client = app.get_client().await?;
@@ -127,7 +147,7 @@ async fn get_network_settings(
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> JsonResult<NetworkSettings> {
     let app = state.lock().await;
-    let settings = app.get_addr()?;
+    let settings = app.get_network_settings()?;
     return Ok(settings);
 }
 
@@ -422,7 +442,7 @@ async fn pre_upload(
             let ack = app
                 .upload_file_session(&mime_type, &uri, size, &policy_id)
                 .await?;
-            let addr = app.get_addr()?.get_addr();
+            let addr = app.get_network_settings()?.get_addr();
             let upload = Upload {
                 id: id,
                 file_path: file_path.to_string_lossy().to_string(),

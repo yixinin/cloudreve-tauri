@@ -13,8 +13,11 @@ use crate::proto::Result;
 
 impl super::AppState {
     pub async fn prepare(&self, email: &str) -> Result<PrepareAck> {
-        let prepare_url = format!("/session/prepare?email={}", email);
-        let req = Request::new(Method::GET, &self.base_url, &prepare_url).with_body(());
+        let req = self.request_with_query(
+            Method::GET,
+            "/session/prepare",
+            std::collections::HashMap::from([("email", email.to_string())]),
+        )?;
         let resp = self.get_client().await?.get::<Ack<PrepareAck>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -28,8 +31,11 @@ impl super::AppState {
             email: email.to_string(),
             password: pass.to_string(),
         };
-        println!("send request to: /session/token, body: {:#?}", &request);
-        let req = Request::new(Method::POST, &self.base_url, "/session/token").with_body(request);
+        println!(
+            "send request to: {}/session/token, body: {:#?}",
+            &self.base_url, &request
+        );
+        let req = self.request_with_body(Method::POST, "/session/token", request)?;
         let resp = self
             .get_client()
             .await?
@@ -62,8 +68,7 @@ impl super::AppState {
             refresh_token: token.refresh_token,
         };
 
-        let req =
-            Request::new(Method::POST, &self.base_url, "/session/token/refresh").with_body(request);
+        let req = self.request_with_body(Method::POST, "/session/token/refresh", request)?;
         let resp = self.get_client().await?.post::<_, Ack<Token>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -74,7 +79,7 @@ impl super::AppState {
     }
 
     pub async fn get_capacity(&self) -> Result<GetCapacityAck> {
-        let req = Request::new(Method::GET, &self.base_url, "/user/capacity").with_body(());
+        let req = self.request(Method::GET, "/user/capacity")?;
         let resp = self
             .get_client()
             .await?
