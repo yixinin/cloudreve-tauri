@@ -169,22 +169,7 @@ impl super::AppState {
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
-            if let Some(mut data) = ack.data {
-                let settings = self.get_network_settings()?;
-                if settings.mode == NetworkMode::P2P {
-                    let mut urls = Vec::with_capacity(data.urls.len());
-                    for (_, url) in data.urls.iter().enumerate() {
-                        if let Ok(uri) = Uri::from_str(&url.url) {
-                            let url = format!(
-                                "{}{}",
-                                settings.get_addr(),
-                                uri.path_and_query().unwrap().as_str()
-                            );
-                            urls.push(Url { url });
-                        }
-                    }
-                    data.urls = urls;
-                }
+            if let Some(data) = ack.data {
                 return Ok(data);
             }
             return Ok(BatchUrlsAck {
@@ -210,17 +195,6 @@ impl super::AppState {
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
-                if let Ok(uri) = Uri::from_str(&data.url) {
-                    let settings = self.get_network_settings()?;
-                    if settings.mode == NetworkMode::P2P {
-                        let url = format!(
-                            "{}{}",
-                            settings.get_addr(),
-                            uri.path_and_query().unwrap().as_str()
-                        );
-                        return Ok(url);
-                    }
-                }
                 return Ok(data.url);
             }
 

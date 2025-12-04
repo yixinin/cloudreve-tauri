@@ -47,9 +47,6 @@ pub struct NetworkSettings {
     pub addr: String,
     pub addr6: String,
     pub mode: NetworkMode,
-    pub proxy_url: Option<String>,
-    pub proxy_username: Option<String>,
-    pub proxy_password: Option<String>,
 }
 
 impl NetworkSettings {
@@ -62,26 +59,29 @@ impl NetworkSettings {
     }
 
     pub fn get_addr(&self) -> String {
-        let addr: String;
-        if !self.addr6.is_empty() {
-            addr = match self.mode {
-                NetworkMode::IPv6 => self.addr6.clone(),
+        // 选择合适的地址
+        let selected_addr = if !self.addr6.is_empty() {
+            match self.mode {
+                NetworkMode::IPv6 => &self.addr6,
                 NetworkMode::Auto => {
+                    // 优化：使用本地网络接口检查而非外部连接
                     if crate::net::has_ipv6_connectivity() {
-                        self.addr6.clone()
+                        &self.addr6
                     } else {
-                        self.addr.clone()
+                        &self.addr
                     }
                 }
-                _ => self.addr.clone(),
-            };
+                _ => &self.addr,
+            }
         } else {
-            addr = self.addr.clone();
+            &self.addr
+        };
+
+        // 确保地址有正确的协议前缀
+        if selected_addr.starts_with("http") {
+            return selected_addr.clone();
         }
-        if addr.starts_with("http") {
-            return addr;
-        }
-        return format!("https://{}", addr);
+        return format!("https://{}", selected_addr);
     }
 
     pub fn get_url(&self, addr: Option<String>, path: &str) -> String {

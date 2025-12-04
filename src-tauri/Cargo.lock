@@ -977,6 +977,7 @@ dependencies = [
  "dumbpipe",
  "enum_dispatch",
  "futures-util",
+ "getifaddrs",
  "h3",
  "h3-quinn",
  "hex",
@@ -2028,6 +2029,17 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "getifaddrs"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ba121d81ab5ea05b0cd5858516266800bf965531a794f7ac58e3eeb804f364f"
+dependencies = [
+ "bitflags 2.9.1",
+ "libc",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

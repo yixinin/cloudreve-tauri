@@ -40,7 +40,7 @@ impl super::AppState {
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
-                if let Err(e) = self.set_token(data.token) {
+                if let Err(e) = self.set_token(data.token).await {
                     println!("set token error:{}", e);
                 }
                 return Ok(data.user);
@@ -55,11 +55,12 @@ impl super::AppState {
             "access_token_ttl",
             "refresh_token",
             "refresh_token_ttl",
-        ])?;
+        ])
+        .await?;
         Ok(())
     }
     pub async fn refresh_token(&self) -> Result<Token> {
-        let token = self.get_token()?;
+        let token = self.get_token().await?;
         let request = RefreshTokenReq {
             refresh_token: token.refresh_token,
         };

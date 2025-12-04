@@ -42,30 +42,46 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            tauri::async_runtime::block_on(async move {
+            // 创建AppState
+            let app_handle = app.handle();
+            let app_state = app::AppState::new(&app_handle)?;
+
+            // 立即将AppState注册到应用中，让其他命令可以访问
+            app.manage(Mutex::new(app_state));
+            #[cfg(dev)]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.open_devtools();
+            }
+            #[cfg(mobile)]
+            {
                 let app_handle = app.handle();
-                let mut app_state = app::AppState::new(&app_handle)?;
+                app_handle.plugin(tauri_plugin_app_events::init())?;
+            }
+            // 在block_on中执行所有异步初始化操作
+            tauri::async_runtime::block_on(async move {
+                // 获取AppState的引用，准备进行初始化
+                let app_state_ref = app.state::<Mutex<app::AppState>>();
 
-                let settings = app_state.get_network_settings()?;
-                app_state.init_base_url(&settings.get_addr())?;
-                if settings.mode == NetworkMode::P2P {
-                    // 初始化iroh endpoint用于P2P模式
-                    if let Err(e) = app_state.init_iroh_endpoint().await {
-                        println!("Failed to initialize iroh endpoint: {}", e);
-                    }
-                    app_state.ct = ClientType::Iroh;
-                }
+                // 获取锁，进行初始化，然后立即释放
+                {
+                    let mut app_state_guard = app_state_ref.lock().await;
 
-                app.manage(Mutex::new(app_state));
-                #[cfg(dev)]
-                {
-                    let window = app.get_webview_window("main").unwrap();
-                    window.open_devtools();
-                }
-                #[cfg(mobile)]
-                {
-                    let app_handle = app.handle();
-                    app_handle.plugin(tauri_plugin_app_events::init())?;
+                    // 获取网络设置
+                    let settings = app_state_guard.get_network_settings().await?;
+                    eprintln!("Network settings: {:?}", settings);
+                    app_state_guard.init_base_url(&settings.get_addr())?;
+                    app_state_guard.ct = match settings.mode {
+                        NetworkMode::P2P => {
+                            // 初始化iroh endpoint用于P2P模式
+                            if let Err(e) = app_state_guard.init_iroh_endpoint().await {
+                                println!("Failed to initialize iroh endpoint: {}", e);
+                            }
+                            ClientType::Iroh
+                        }
+                        _ => ClientType::Reqwest,
+                    };
+                    // 锁会在这里自动释放
                 }
 
                 Ok(())
@@ -136,8 +152,8 @@ async fn set_network_settings(
     mode: NetworkMode,
 ) -> JsonResult<NetworkSettings> {
     let mut app = state.lock().await;
-    app.set_addr(addr, addr6, mode)?;
-    let settings = app.get_network_settings()?;
+    app.set_addr(addr, addr6, mode).await?;
+    let settings = app.get_network_settings().await?;
     let addr = settings.get_addr();
     app.init_base_url(&addr)?;
     match settings.mode {
@@ -154,8 +170,10 @@ async fn set_network_settings(
 async fn get_network_settings(
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> JsonResult<NetworkSettings> {
+    eprintln!("get_network_settings watting lock");
     let app = state.lock().await;
-    let settings = app.get_network_settings()?;
+    eprintln!("get_network_settings get lock");
+    let settings = app.get_network_settings().await?;
     return Ok(settings);
 }
 
@@ -429,41 +447,42 @@ async fn pre_upload(
     target_path: String,
     policy_id: String,
 ) -> JsonResult<Upload> {
-    let app = state.lock().await;
-    let id = app.gen_id()?;
+    // 先进行文件选择，不要持有锁
+    let path = match hd.dialog().file().blocking_pick_file() {
+        Some(path) => path,
+        None => return Err(AppError::NoData),
+    };
 
-    match hd.dialog().file().blocking_pick_file() {
-        Some(path) => {
-            let file_path = path.as_path().unwrap();
-            let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            let uri = format!("{}/{}", target_path, filename);
+    let file_path = path.as_path().unwrap();
+    let filename = file_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let uri = format!("{}/{}", target_path, filename);
 
-            let mime_type = proto::storage::get_mime_type(&filename);
-            let mut size = 0;
-            if let Ok(meta) = std::fs::metadata(&file_path) {
-                size = meta.len()
-            }
-            println!(
-                "  dir:{}, policy_id:{}, filename:{}, mime:{}",
-                target_path, policy_id, filename, &mime_type
-            );
-            let ack = app
-                .upload_file_session(&mime_type, &uri, size, &policy_id)
-                .await?;
-            let addr = app.get_network_settings()?.get_addr();
-            let upload = Upload {
-                id: id,
-                file_path: file_path.to_string_lossy().to_string(),
-                filename: filename.to_string(),
-                uri: uri.clone(),
-                upload_url: format!("{}{}/{}/0", addr, "/file/upload", ack.session_id),
-            };
-            return Ok(upload);
-        }
-        None => {
-            return Err(AppError::NoData);
-        }
+    let mime_type = proto::storage::get_mime_type(&filename);
+    let mut size = 0;
+    if let Ok(meta) = std::fs::metadata(&file_path) {
+        size = meta.len()
     }
+
+    // 现在获取锁，进行后续操作
+    let app = state.lock().await;
+    let id = app.gen_id().await?;
+
+    println!(
+        "  dir:{}, policy_id:{}, filename:{}, mime:{}",
+        target_path, policy_id, filename, &mime_type
+    );
+    let ack = app
+        .upload_file_session(&mime_type, &uri, size, &policy_id)
+        .await?;
+    let addr = app.get_network_settings().await?.get_addr();
+    let upload = Upload {
+        id: id,
+        file_path: file_path.to_string_lossy().to_string(),
+        filename: filename.to_string(),
+        uri: uri.clone(),
+        upload_url: format!("{}{}/{}/0", addr, "/file/upload", ack.session_id),
+    };
+    return Ok(upload);
 }
 
 #[tauri::command]
@@ -492,7 +511,7 @@ async fn pre_download(
             download_url
         )));
     }
-    let id = app.gen_id()?;
+    let id = app.gen_id().await?;
 
     Ok(Download {
         id: id,

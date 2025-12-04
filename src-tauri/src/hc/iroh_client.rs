@@ -76,9 +76,11 @@ impl IrohClient {
         let endpoint = self.endpoint.clone();
 
         let addr = self.addr.clone();
+
+        eprintln!("try to connect to: {:?}", addr);
         // 连接到远程端点，使用HTTP/1.1
         let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
-
+        eprintln!("iroh client connected, start open bi");
         // 打开双向流
         let (mut send, recv) = conn.open_bi().await?;
         send.write_all(&dumbpipe::HANDSHAKE).await?;
