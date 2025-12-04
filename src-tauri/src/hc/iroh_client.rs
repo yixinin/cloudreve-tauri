@@ -1,5 +1,6 @@
-use std::str::FromStr;
+use std::sync::OnceLock;
 use std::vec::Vec;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use bytes::Buf;
@@ -11,9 +12,13 @@ use serde::de::DeserializeOwned;
 use tokio::{self, task};
 
 use crate::hc::{quinn_endpoint, HttpClient, Request, Response};
-
+/// global iroh endpoint
+static ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
+fn endpoint() -> &'static Endpoint {
+    ENDPOINT.get().unwrap()
+}
 pub struct IrohClient {
-    endpoint: Endpoint,
+    endpoint: Arc<Endpoint>,
     addr: EndpointAddr,
 }
 
@@ -29,7 +34,10 @@ impl Clone for IrohClient {
 
 impl IrohClient {
     pub fn new(endpoint: Endpoint, addr: EndpointAddr) -> Self {
-        Self { endpoint, addr }
+        Self {
+            endpoint: Arc::new(endpoint),
+            addr,
+        }
     }
 
     async fn send_request<R, T>(&self, req: Request<R>) -> Result<Response<T>>
@@ -37,9 +45,6 @@ impl IrohClient {
         R: serde::Serialize,
         T: DeserializeOwned,
     {
-        // 支持HTTP/1.1和HTTP/2.0协议
-        const HANDSHAKE: &[u8] = b"";
-
         // 构建请求
         let mut request_builder = HttpRequest::builder()
             .uri(&req.url)
@@ -69,90 +74,43 @@ impl IrohClient {
 
         // 克隆必要的字段，避免移动整个self
         let endpoint = self.endpoint.clone();
+
         let addr = self.addr.clone();
+        // 连接到远程端点，使用HTTP/1.1
+        let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
 
-        // 尝试使用HTTP/2.0协议
-        let request_clone = request.clone();
-        let result: Result<http::Response<hyper::body::Incoming>, anyhow::Error> = async move {
-            // 连接到远程端点，使用HTTP/2.0
-            let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
-            // 打开双向流
-            let (mut send, recv) = conn.open_bi().await?;
+        // 打开双向流
+        let (mut send, recv) = conn.open_bi().await?;
+        send.write_all(&dumbpipe::HANDSHAKE).await?;
+        // 创建QuinnEndpoint包装器
+        let stream = quinn_endpoint::QuinnEndpoint { send, recv };
+        let io = TokioIo::new(stream);
 
-            // 发送握手数据（如果需要）
-            if !HANDSHAKE.is_empty() {
-                send.write_all(HANDSHAKE).await?;
+        // 使用HTTP/1.1
+        let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+            .preserve_header_case(true)
+            .title_case_headers(true)
+            .handshake(io)
+            .await?;
+
+        // 在后台处理连接
+        task::spawn(async move {
+            if let Err(err) = conn.await {
+                eprintln!("Connection to {:?} error: {}", addr, err);
             }
+        });
 
-            // 创建QuinnEndpoint包装器
-            let stream = quinn_endpoint::QuinnEndpoint { send, recv };
-            let io = TokioIo::new(stream);
+        println!(
+            "send request to: {}, body: {:#?}",
+            request.uri(),
+            request.body(),
+        );
 
-            // 使用HTTP/2.0
-            let (mut sender, conn) =
-                hyper::client::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .handshake(io)
-                    .await?;
-
-            // 在后台处理连接
-            task::spawn(async move {
-                if let Err(err) = conn.await {
-                    eprintln!("Connection error: {}", err);
-                }
-            });
-
-            // 发送请求并获取响应
-            let response = sender
-                .send_request(request_clone)
-                .await
-                .map_err(|e| anyhow!("Failed to send request: {}", e))?;
-
-            Ok(response)
-        }
-        .await;
-
-        // 如果HTTP/2.0失败，回退到HTTP/1.1
-        let response = match result {
-            Ok(response) => response,
-            Err(_) => {
-                // 连接到远程端点，使用HTTP/1.1
-                let conn = self
-                    .endpoint
-                    .connect(self.addr.clone(), dumbpipe::ALPN)
-                    .await?;
-                // 打开双向流
-                let (mut send, recv) = conn.open_bi().await?;
-
-                // 发送握手数据（如果需要）
-                if !HANDSHAKE.is_empty() {
-                    send.write_all(HANDSHAKE).await?;
-                }
-
-                // 创建QuinnEndpoint包装器
-                let stream = quinn_endpoint::QuinnEndpoint { send, recv };
-                let io = TokioIo::new(stream);
-
-                // 使用HTTP/1.1
-                let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-                    .preserve_header_case(true)
-                    .title_case_headers(true)
-                    .handshake(io)
-                    .await?;
-
-                // 在后台处理连接
-                task::spawn(async move {
-                    if let Err(err) = conn.await {
-                        eprintln!("Connection error: {}", err);
-                    }
-                });
-
-                // 发送请求并获取响应
-                sender
-                    .send_request(request)
-                    .await
-                    .map_err(|e| anyhow!("Failed to send request: {}", e))?
-            }
-        };
+        // 发送请求并获取响应
+        let response = sender
+            .send_request(request)
+            .await
+            .map_err(|e| anyhow!("Failed to send request: {}", e))?;
 
         let status = response.status();
         let headers = response.headers().clone();
@@ -178,7 +136,7 @@ impl IrohClient {
                 }
             }
         }
-
+        eprintln!("response body: {:?}", String::from_utf8_lossy(&body_bytes));
         // 反序列化响应数据
         let data = if !body_bytes.is_empty() {
             serde_json::from_slice(&body_bytes)
@@ -224,79 +182,36 @@ impl HttpClient for IrohClient {
         // 克隆必要的字段，避免移动整个self
         let endpoint = self.endpoint.clone();
         let addr = self.addr.clone();
+        // 连接到远程端点，使用HTTP/1.1
+        let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
+        // 打开双向流
+        let (mut send, recv) = conn.open_bi().await?;
+        send.write_all(&dumbpipe::HANDSHAKE).await?;
 
-        // 尝试使用HTTP/2.0协议
-        let request_clone = request.clone();
-        let result: Result<http::Response<hyper::body::Incoming>, anyhow::Error> = async move {
-            // 连接到远程端点，使用HTTP/2.0
-            let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
-            // 打开双向流
-            let (send, recv) = conn.open_bi().await?;
+        // 创建QuinnEndpoint包装器
+        let stream = quinn_endpoint::QuinnEndpoint { send, recv };
+        let io = TokioIo::new(stream);
 
-            // 创建QuinnEndpoint包装器
-            let stream = quinn_endpoint::QuinnEndpoint { send, recv };
-            let io = TokioIo::new(stream);
+        // 使用HTTP/1.1
+        let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
+            .preserve_header_case(true)
+            .title_case_headers(true)
+            .handshake(io)
+            .await?;
 
-            // 使用HTTP/2.0
-            let (mut sender, conn) =
-                hyper::client::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .handshake(io)
-                    .await?;
-
-            // 在后台处理连接
-            tokio::task::spawn(async move {
-                if let Err(err) = conn.await {
-                    eprintln!("Connection error: {}", err);
-                }
-            });
-
-            // 发送请求并获取响应
-            let response = sender
-                .send_request(request_clone)
-                .await
-                .map_err(|e| anyhow!("Failed to send HEAD request: {}", e))?;
-
-            Ok(response)
-        }
-        .await;
-
-        // 如果HTTP/2.0失败，回退到HTTP/1.1
-        let response = match result {
-            Ok(response) => response,
-            Err(_) => {
-                // 连接到远程端点，使用HTTP/1.1
-                let conn = self
-                    .endpoint
-                    .connect(self.addr.clone(), dumbpipe::ALPN)
-                    .await?;
-                // 打开双向流
-                let (send, recv) = conn.open_bi().await?;
-
-                // 创建QuinnEndpoint包装器
-                let stream = quinn_endpoint::QuinnEndpoint { send, recv };
-                let io = TokioIo::new(stream);
-
-                // 使用HTTP/1.1
-                let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-                    .preserve_header_case(true)
-                    .title_case_headers(true)
-                    .handshake(io)
-                    .await?;
-
-                // 在后台处理连接
-                tokio::task::spawn(async move {
-                    if let Err(err) = conn.await {
-                        eprintln!("Connection error: {}", err);
-                    }
-                });
-
-                // 发送请求并获取响应
-                sender
-                    .send_request(request)
-                    .await
-                    .map_err(|e| anyhow!("Failed to send HEAD request: {}", e))?
+        // 在后台处理连接
+        tokio::task::spawn(async move {
+            if let Err(err) = conn.await {
+                eprintln!("Connection to {:?} error: {}", addr, err);
             }
-        };
+        });
+
+        // 发送请求并获取响应
+
+        let response = sender
+            .send_request(request)
+            .await
+            .map_err(|e| anyhow!("Failed to send HEAD request: {}", e))?;
 
         let status = response.status();
         let headers = response.headers().clone();

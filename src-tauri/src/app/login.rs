@@ -31,10 +31,6 @@ impl super::AppState {
             email: email.to_string(),
             password: pass.to_string(),
         };
-        println!(
-            "send request to: {}/session/token, body: {:#?}",
-            &self.base_url, &request
-        );
         let req = self.request_with_body(Method::POST, "/session/token", request)?;
         let resp = self
             .get_client()

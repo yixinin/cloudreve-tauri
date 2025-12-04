@@ -181,7 +181,17 @@ impl HttpClientManager {
 
     // 初始化Reqwest客户端
     pub fn init_reqwest_client(&mut self) -> Result<()> {
-        let client = ReqwestClient::new()?;
+        self.init_reqwest_client_with_proxy(None, None, None)
+    }
+
+    // 初始化带有代理配置的Reqwest客户端
+    pub fn init_reqwest_client_with_proxy(
+        &mut self,
+        proxy_url: Option<&str>,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<()> {
+        let client = ReqwestClient::with_proxy(proxy_url, username, password)?;
         self.reqwest_client = Arc::new(Some(client));
         Ok(())
     }

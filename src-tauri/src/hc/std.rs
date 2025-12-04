@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use http::Method;
+use reqwest::Proxy;
 use serde::de::DeserializeOwned;
 
 use crate::hc::{HttpClient, Request, Response};
@@ -8,7 +9,28 @@ pub struct ReqwestClient(reqwest::Client);
 
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
-        let client = reqwest::Client::builder()
+        Self::with_proxy(None, None, None)
+    }
+
+    pub fn with_proxy(
+        proxy_url: Option<&str>,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<Self> {
+        let mut builder = reqwest::Client::builder();
+
+        if let Some(url) = proxy_url {
+            let mut proxy =
+                reqwest::Proxy::all(url).map_err(|e| anyhow!("Failed to create proxy: {}", e))?;
+
+            if let (Some(user), Some(pass)) = (username, password) {
+                proxy = proxy.basic_auth(user, pass);
+            }
+
+            builder = builder.proxy(proxy);
+        }
+
+        let client = builder
             .build()
             .map_err(|e| anyhow!("Failed to create reqwest client: {}", e))?;
         Ok(ReqwestClient(client))
@@ -35,7 +57,6 @@ impl HttpClient for ReqwestClient {
     {
         // 对于HEAD请求，我们不关心响应体，所以可以使用泛型参数并忽略它
         let mut req_builder = self.0.request(Method::HEAD, &req.url);
-
         // 添加headers
         for (key, value) in &req.headers {
             if let Some(value_str) = value.to_str().ok() {

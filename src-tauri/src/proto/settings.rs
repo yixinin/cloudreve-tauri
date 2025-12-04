@@ -47,6 +47,9 @@ pub struct NetworkSettings {
     pub addr: String,
     pub addr6: String,
     pub mode: NetworkMode,
+    pub proxy_url: Option<String>,
+    pub proxy_username: Option<String>,
+    pub proxy_password: Option<String>,
 }
 
 impl NetworkSettings {

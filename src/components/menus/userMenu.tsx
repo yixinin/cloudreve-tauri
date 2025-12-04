@@ -113,9 +113,10 @@ const UserMenu = () => {
                 <Divider sx={{ my: 1 }} />
 
                 {/* 2. 设置 */}
-                <MenuItem onClick={handleSettings}>                    <ListItemIcon>
-                    <SettingsIcon fontSize="small" />
-                </ListItemIcon>
+                <MenuItem onClick={handleSettings}>
+                    <ListItemIcon>
+                        <SettingsIcon fontSize="small" />
+                    </ListItemIcon>
                     <ListItemText primary="设置" />
                 </MenuItem>
 
@@ -140,9 +141,9 @@ const UserMenu = () => {
 };
 
 export default UserMenu;
-
+import { useNavigate } from 'react-router-dom';
 
 const handleSettings = () => {
+    const navigate = useNavigate();
     navigate('/settings');
-    handleClose();
 };
