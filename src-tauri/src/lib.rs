@@ -42,34 +42,31 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            tauri::async_runtime::block_on(async move {
+            let app_handle = app.handle();
+            let mut app_state = app::AppState::new(&app_handle)?;
+
+            let settings = app_state.get_network_settings()?;
+            app_state.init_base_url(&settings.get_addr())?;
+            if let Err(e) = app_state.init_iroh_endpoint() {
+                println!("Failed to initialize iroh endpoint: {}", e);
+            }
+            if settings.mode == NetworkMode::P2P {
+                // 初始化iroh endpoint用于P2P模式
+                app_state.ct = ClientType::Iroh;
+            }
+
+            app.manage(Mutex::new(app_state));
+            #[cfg(dev)]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.open_devtools();
+            }
+            #[cfg(mobile)]
+            {
                 let app_handle = app.handle();
-                let mut app_state = app::AppState::new(&app_handle)?;
-
-                let settings = app_state.get_network_settings()?;
-                app_state.init_base_url(&settings.get_addr())?;
-                if settings.mode == NetworkMode::P2P {
-                    // 初始化iroh endpoint用于P2P模式
-                    if let Err(e) = app_state.init_iroh_endpoint().await {
-                        println!("Failed to initialize iroh endpoint: {}", e);
-                    }
-                    app_state.ct = ClientType::Iroh;
-                }
-
-                app.manage(Mutex::new(app_state));
-                #[cfg(dev)]
-                {
-                    let window = app.get_webview_window("main").unwrap();
-                    window.open_devtools();
-                }
-                #[cfg(mobile)]
-                {
-                    let app_handle = app.handle();
-                    app_handle.plugin(tauri_plugin_app_events::init())?;
-                }
-
-                Ok(())
-            })
+                app_handle.plugin(tauri_plugin_app_events::init())?;
+            }
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             toggle_fullscreen,

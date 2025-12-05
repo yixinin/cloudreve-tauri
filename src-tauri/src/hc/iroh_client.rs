@@ -1,42 +1,89 @@
-use std::sync::OnceLock;
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::vec::Vec;
-use std::{str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use bytes::Buf;
 use http::Request as HttpRequest;
 use http_body_util::{BodyExt, Full};
 use hyper_util::rt::TokioIo;
-use iroh::{Endpoint, EndpointAddr};
+use iroh::endpoint::Connection;
+use iroh::{EndpointAddr, SecretKey};
 use serde::de::DeserializeOwned;
-use tokio::{self, task};
+use tokio::sync::Mutex;
 
 use crate::hc::{quinn_endpoint, HttpClient, Request, Response};
 /// global iroh endpoint
-static ENDPOINT: OnceLock<Endpoint> = OnceLock::new();
-fn endpoint() -> &'static Endpoint {
-    ENDPOINT.get().unwrap()
+struct ConnectionPool {
+    connections: Mutex<VecDeque<(Connection, Instant)>>,
+    addr: EndpointAddr,
+    max_idle_time: Duration,
+}
+
+impl ConnectionPool {
+    fn new(addr: EndpointAddr) -> Self {
+        Self {
+            connections: Mutex::new(VecDeque::new()),
+            addr,
+            max_idle_time: Duration::from_secs(30),
+        }
+    }
+
+    async fn get_connection(&self) -> Result<Connection> {
+        let mut connections = self.connections.lock().await;
+
+        // 移除过期连接
+        let now = Instant::now();
+        connections.retain(|(_, created)| now.duration_since(*created) < self.max_idle_time);
+
+        // 如果有可用连接则复用
+        if let Some((conn, _)) = connections.pop_front() {
+            if conn.close_reason().is_none() {
+                return Ok(conn);
+            }
+        }
+
+        // 释放锁后再进行异步操作
+        drop(connections); // 释放锁后再进行异步连接
+
+        let endpoint = iroh::Endpoint::builder()
+            .secret_key(get_or_create_secret())
+            .bind()
+            .await?;
+
+        let conn = endpoint.connect(self.addr.clone(), dumbpipe::ALPN).await?;
+        Ok(conn)
+    }
+
+    async fn release_connection(&self, conn: Connection) {
+        if conn.close_reason().is_none() {
+            let mut connections = self.connections.lock().await;
+            if connections.len() < 5 {
+                connections.push_back((conn, Instant::now()));
+            }
+        }
+    }
 }
 pub struct IrohClient {
-    endpoint: Arc<Endpoint>,
-    addr: EndpointAddr,
+    // endpoint: Arc<Endpoint>,
+    // addr: EndpointAddr,
+    connection_pool: Arc<ConnectionPool>,
 }
 
 // 添加IrohClient的构造函数
 impl Clone for IrohClient {
     fn clone(&self) -> Self {
         Self {
-            endpoint: self.endpoint.clone(),
-            addr: self.addr.clone(),
+            connection_pool: self.connection_pool.clone(),
         }
     }
 }
 
 impl IrohClient {
-    pub fn new(endpoint: Endpoint, addr: EndpointAddr) -> Self {
+    pub fn new(addr: EndpointAddr) -> Self {
         Self {
-            endpoint: Arc::new(endpoint),
-            addr,
+            connection_pool: Arc::new(ConnectionPool::new(addr)),
         }
     }
 
@@ -72,15 +119,18 @@ impl IrohClient {
             request_builder.body(Full::new(bytes::Bytes::new()))?
         };
 
-        // 克隆必要的字段，避免移动整个self
-        let endpoint = self.endpoint.clone();
+        println!(
+            "send request to: {}, body: {:#?}",
+            request.uri(),
+            request.body(),
+        );
 
-        let addr = self.addr.clone();
-        // 连接到远程端点，使用HTTP/1.1
-        let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
+        // 从连接池获取连接
+        let pool_conn = self.connection_pool.get_connection().await?;
+        let addr = self.connection_pool.addr.clone();
 
         // 打开双向流
-        let (mut send, recv) = conn.open_bi().await?;
+        let (mut send, recv) = pool_conn.open_bi().await?;
         send.write_all(&dumbpipe::HANDSHAKE).await?;
         // 创建QuinnEndpoint包装器
         let stream = quinn_endpoint::QuinnEndpoint { send, recv };
@@ -91,26 +141,24 @@ impl IrohClient {
             .preserve_header_case(true)
             .title_case_headers(true)
             .handshake(io)
-            .await?;
+            .await
+            .map_err(|e| anyhow!("HTTP handshake failed: {}", e))?;
 
         // 在后台处理连接
-        task::spawn(async move {
+        tokio::task::spawn(async move {
             if let Err(err) = conn.await {
                 eprintln!("Connection to {:?} error: {}", addr, err);
             }
         });
-
-        println!(
-            "send request to: {}, body: {:#?}",
-            request.uri(),
-            request.body(),
-        );
 
         // 发送请求并获取响应
         let response = sender
             .send_request(request)
             .await
             .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+
+        // 请求成功，将连接释放回连接池
+        self.connection_pool.release_connection(pool_conn).await;
 
         let status = response.status();
         let headers = response.headers().clone();
@@ -168,55 +216,7 @@ impl HttpClient for IrohClient {
     where
         R: serde::Serialize,
     {
-        let mut req_builder = http::Request::builder()
-            .uri(&req.url)
-            .method(req.method.clone());
-
-        // 添加请求头
-        for (key, value) in &req.headers {
-            req_builder = req_builder.header(key, value.clone());
-        }
-
-        let request = req_builder.body(http_body_util::Full::new(bytes::Bytes::new()))?;
-
-        // 克隆必要的字段，避免移动整个self
-        let endpoint = self.endpoint.clone();
-        let addr = self.addr.clone();
-        // 连接到远程端点，使用HTTP/1.1
-        let conn = endpoint.connect(addr.clone(), dumbpipe::ALPN).await?;
-        // 打开双向流
-        let (mut send, recv) = conn.open_bi().await?;
-        send.write_all(&dumbpipe::HANDSHAKE).await?;
-
-        // 创建QuinnEndpoint包装器
-        let stream = quinn_endpoint::QuinnEndpoint { send, recv };
-        let io = TokioIo::new(stream);
-
-        // 使用HTTP/1.1
-        let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-            .preserve_header_case(true)
-            .title_case_headers(true)
-            .handshake(io)
-            .await?;
-
-        // 在后台处理连接
-        tokio::task::spawn(async move {
-            if let Err(err) = conn.await {
-                eprintln!("Connection to {:?} error: {}", addr, err);
-            }
-        });
-
-        // 发送请求并获取响应
-
-        let response = sender
-            .send_request(request)
-            .await
-            .map_err(|e| anyhow!("Failed to send HEAD request: {}", e))?;
-
-        let status = response.status();
-        let headers = response.headers().clone();
-
-        Ok(Response::new(status, headers, ()))
+        self.send_request(req).await
     }
 
     async fn post<R, T>(self, req: Request<R>) -> Result<Response<T>>
@@ -242,4 +242,11 @@ impl HttpClient for IrohClient {
         // 对于DELETE请求，我们可以忽略body，直接调用send_request
         self.send_request(req).await
     }
+}
+
+fn get_or_create_secret() -> SecretKey {
+    let key = SecretKey::generate(&mut rand::rng());
+    let key_str = hex::encode(key.to_bytes());
+    eprintln!("using secret key {key_str}");
+    key
 }

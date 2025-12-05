@@ -153,46 +153,18 @@ pub enum HttpClientDispatcher {
 // 客户端管理器，负责创建和管理不同类型的HTTP客户端
 #[derive(Clone)]
 pub struct HttpClientManager {
-    iroh_endpoint: Arc<Mutex<Option<Endpoint>>>,
     iroh_addr: Option<EndpointAddr>,
-    reqwest_client: Arc<Option<ReqwestClient>>,
 }
 
 impl HttpClientManager {
     // 创建一个新的客户端管理器
     pub fn new() -> Self {
-        Self {
-            iroh_endpoint: Arc::new(Mutex::new(None)),
-            iroh_addr: None,
-            reqwest_client: Arc::new(None),
-        }
+        Self { iroh_addr: None }
     }
 
     // 初始化Iroh端点（程序启动时调用）
-    pub async fn init_iroh_endpoint(
-        &mut self,
-        endpoint: Endpoint,
-        addr: EndpointAddr,
-    ) -> Result<()> {
-        self.iroh_endpoint = Arc::new(Mutex::new(Some(endpoint)));
+    pub fn init_iroh_endpoint(&mut self, addr: EndpointAddr) -> Result<()> {
         self.iroh_addr = Some(addr);
-        Ok(())
-    }
-
-    // 初始化Reqwest客户端
-    pub fn init_reqwest_client(&mut self) -> Result<()> {
-        self.init_reqwest_client_with_proxy(None, None, None)
-    }
-
-    // 初始化带有代理配置的Reqwest客户端
-    pub fn init_reqwest_client_with_proxy(
-        &mut self,
-        proxy_url: Option<&str>,
-        username: Option<&str>,
-        password: Option<&str>,
-    ) -> Result<()> {
-        let client = ReqwestClient::with_proxy(proxy_url, username, password)?;
-        self.reqwest_client = Arc::new(Some(client));
         Ok(())
     }
 
@@ -200,30 +172,19 @@ impl HttpClientManager {
     pub async fn get_client(&self, client_type: ClientType) -> Result<HttpClientDispatcher> {
         match client_type {
             ClientType::Iroh => {
-                // 获取Iroh端点
-                let endpoint = self
-                    .iroh_endpoint
-                    .lock()
-                    .await
-                    .clone()
-                    .ok_or_else(|| anyhow!("Iroh endpoint not initialized"))?;
                 let addr = self
                     .iroh_addr
                     .clone()
                     .ok_or_else(|| anyhow!("Iroh address not initialized"))?;
 
                 // 创建IrohClient并包装
-                let iroh_client = IrohClient::new(endpoint, addr);
+                let iroh_client = IrohClient::new(addr);
                 let wrapper = IrohClientWrapper(Arc::new(Mutex::new(iroh_client)));
                 Ok(HttpClientDispatcher::Iroh(wrapper))
             }
             ClientType::Reqwest => {
                 // 获取Reqwest客户端
-                let reqwest_client = self
-                    .reqwest_client
-                    .as_ref()
-                    .clone()
-                    .ok_or_else(|| anyhow!("Reqwest client not initialized"))?;
+                let reqwest_client = ReqwestClient::new()?;
                 let wrapper = ReqwestClientWrapper(reqwest_client);
                 Ok(HttpClientDispatcher::Reqwest(wrapper))
             }
