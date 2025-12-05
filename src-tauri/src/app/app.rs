@@ -169,29 +169,11 @@ impl AppState {
         } else {
             String::new()
         };
-        let proxy_url = if let Some(val) = db.get("proxy_url")? {
-            Some(String::from_utf8(val.to_vec())?)
-        } else {
-            None
-        };
-        let proxy_username = if let Some(val) = db.get("proxy_username")? {
-            Some(String::from_utf8(val.to_vec())?)
-        } else {
-            None
-        };
-        let proxy_password = if let Some(val) = db.get("proxy_password")? {
-            Some(String::from_utf8(val.to_vec())?)
-        } else {
-            None
-        };
 
         Ok(NetworkSettings {
             addr: addr,
             addr6: addr6,
             mode: mode.parse().unwrap_or(NetworkMode::Auto),
-            proxy_url: proxy_url,
-            proxy_username: proxy_username,
-            proxy_password: proxy_password,
         })
     }
 
@@ -228,47 +210,6 @@ impl AppState {
         for key in keys {
             db.remove(key)?;
         }
-        Ok(())
-    }
-
-    pub fn set_proxy_settings(
-        &self,
-        proxy_url: Option<String>,
-        username: Option<String>,
-        password: Option<String>,
-    ) -> Result<()> {
-        let db = self.db.clone();
-
-        if let Some(url) = proxy_url {
-            if url.is_empty() {
-                db.remove("proxy_url")?;
-            } else {
-                db.insert("proxy_url", url.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_url")?;
-        }
-
-        if let Some(user) = username {
-            if user.is_empty() {
-                db.remove("proxy_username")?;
-            } else {
-                db.insert("proxy_username", user.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_username")?;
-        }
-
-        if let Some(pass) = password {
-            if pass.is_empty() {
-                db.remove("proxy_password")?;
-            } else {
-                db.insert("proxy_password", pass.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_password")?;
-        }
-
         Ok(())
     }
 }
