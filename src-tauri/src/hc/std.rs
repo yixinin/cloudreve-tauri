@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
 use http::Method;
-use reqwest::Proxy;
 use serde::de::DeserializeOwned;
 
 use crate::hc::{HttpClient, Request, Response};
@@ -9,30 +8,7 @@ pub struct ReqwestClient(reqwest::Client);
 
 impl ReqwestClient {
     pub fn new() -> Result<Self> {
-        Self::with_proxy(None, None, None)
-    }
-
-    pub fn with_proxy(
-        proxy_url: Option<&str>,
-        username: Option<&str>,
-        password: Option<&str>,
-    ) -> Result<Self> {
-        let mut builder = reqwest::Client::builder();
-
-        if let Some(url) = proxy_url {
-            let mut proxy =
-                reqwest::Proxy::all(url).map_err(|e| anyhow!("Failed to create proxy: {}", e))?;
-
-            if let (Some(user), Some(pass)) = (username, password) {
-                proxy = proxy.basic_auth(user, pass);
-            }
-
-            builder = builder.proxy(proxy);
-        }
-
-        let client = builder
-            .build()
-            .map_err(|e| anyhow!("Failed to create reqwest client: {}", e))?;
+        let client = reqwest::Client::builder().build()?;
         Ok(ReqwestClient(client))
     }
 }

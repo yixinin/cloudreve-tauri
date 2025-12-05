@@ -42,11 +42,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // 创建AppState
             let app_handle = app.handle();
-            let app_state = app::AppState::new(&app_handle)?;
+            let mut app_state = app::AppState::new(&app_handle)?;
 
-            // 立即将AppState注册到应用中，让其他命令可以访问
+            let settings = app_state.get_network_settings()?;
+            app_state.init_base_url(&settings.get_addr())?;
+            if let Err(e) = app_state.init_iroh_endpoint() {
+                println!("Failed to initialize iroh endpoint: {}", e);
+            }
+            if settings.mode == NetworkMode::P2P {
+                // 初始化iroh endpoint用于P2P模式
+                app_state.ct = ClientType::Iroh;
+            }
+
             app.manage(Mutex::new(app_state));
             #[cfg(dev)]
             {
@@ -58,34 +66,7 @@ pub fn run() {
                 let app_handle = app.handle();
                 app_handle.plugin(tauri_plugin_app_events::init())?;
             }
-            // 在block_on中执行所有异步初始化操作
-            tauri::async_runtime::block_on(async move {
-                // 获取AppState的引用，准备进行初始化
-                let app_state_ref = app.state::<Mutex<app::AppState>>();
-
-                // 获取锁，进行初始化，然后立即释放
-                {
-                    let mut app_state_guard = app_state_ref.lock().await;
-
-                    // 获取网络设置
-                    let settings = app_state_guard.get_network_settings().await?;
-                    eprintln!("Network settings: {:?}", settings);
-                    app_state_guard.init_base_url(&settings.get_addr())?;
-                    app_state_guard.ct = match settings.mode {
-                        NetworkMode::P2P => {
-                            // 初始化iroh endpoint用于P2P模式
-                            if let Err(e) = app_state_guard.init_iroh_endpoint().await {
-                                println!("Failed to initialize iroh endpoint: {}", e);
-                            }
-                            ClientType::Iroh
-                        }
-                        _ => ClientType::Reqwest,
-                    };
-                    // 锁会在这里自动释放
-                }
-
-                Ok(())
-            })
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             toggle_fullscreen,

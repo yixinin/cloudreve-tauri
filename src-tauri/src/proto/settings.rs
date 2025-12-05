@@ -76,7 +76,7 @@ impl NetworkSettings {
         } else {
             &self.addr
         };
-
+        
         // 确保地址有正确的协议前缀
         if selected_addr.starts_with("http") {
             return selected_addr.clone();

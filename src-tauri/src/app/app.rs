@@ -94,15 +94,25 @@ impl AppState {
     }
 
     pub async fn init_iroh_endpoint(&mut self) -> Result<()> {
+        // 检查是否配置了代理
+        let settings = self.get_network_settings()?;
+        if settings.proxy_url.is_some() {
+            // Iroh 不直接支持代理，使用 Reqwest 客户端替代
+            println!("Proxy configured, using Reqwest client instead of Iroh");
+            self.hcm.init_reqwest_client_with_proxy(
+                settings.proxy_url.as_deref(),
+                settings.proxy_username.as_deref(),
+                settings.proxy_password.as_deref(),
+            )?;
+            self.ct = hc::http_client_manager::ClientType::Reqwest;
+            return Ok(());
+        }
+
         // 没有代理配置，继续使用 Iroh
-        let token = "endpointaanltmlir7wb4q5yccze2qsgnz2e2ds5qutaii4jhwuzc3fnesbl4biaf5uhi5dqom5c6l3von3tcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabhk4ebacafx64ahpaplaeaqciabbw4aaaiaaaaaaaaaaaaaabhl4ebacajebgfcqdvvn4aaaaaaaaaaadlk5pqqe";
+        let token = "endpointaaw67fgj5qswjmgrj26s7mvou7ejojq5ips3iubm4ebyqgjouxyq2ayaf5uhi5dqom5c6l3bobztcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabgkyybqcajaaeg3qaabaaaaaaaaaaaaaaaezpdag";
         let secret_key = get_or_create_secret();
         let addr = Self::parse_subdomain(token)?;
-        let builder = Endpoint::builder().secret_key(secret_key);
-        let builder = builder.bind_addr_v4("0.0.0.0:0".parse()?);
-        let builder = builder.bind_addr_v6("[::]:0".parse()?);
-        let endpoint = builder.bind().await?;
-        self.hcm.init_iroh_endpoint(endpoint, addr.clone()).await?;
+        self.hcm.init_iroh_endpoint(addr.clone())?;
         return Ok(());
     }
 
@@ -181,30 +191,44 @@ impl AppState {
     }
     pub async fn get_network_settings(&self) -> Result<NetworkSettings> {
         let db = self.db.clone();
+        let addr = if let Some(val) = db.get("addr")? {
+            String::from_utf8(val.to_vec())?
+        } else {
+            String::new()
+        };
+        let addr6 = if let Some(val) = db.get("addr6")? {
+            String::from_utf8(val.to_vec())?
+        } else {
+            String::new()
+        };
+        let mode = if let Some(val) = db.get("mode")? {
+            String::from_utf8(val.to_vec())?
+        } else {
+            String::new()
+        };
+        let proxy_url = if let Some(val) = db.get("proxy_url")? {
+            Some(String::from_utf8(val.to_vec())?)
+        } else {
+            None
+        };
+        let proxy_username = if let Some(val) = db.get("proxy_username")? {
+            Some(String::from_utf8(val.to_vec())?)
+        } else {
+            None
+        };
+        let proxy_password = if let Some(val) = db.get("proxy_password")? {
+            Some(String::from_utf8(val.to_vec())?)
+        } else {
+            None
+        };
 
-        // 使用spawn_blocking将阻塞的数据库操作移到单独的线程
-        tokio::task::spawn_blocking(move || {
-            let addr = if let Some(val) = db.get("addr")? {
-                String::from_utf8(val.to_vec())?
-            } else {
-                String::new()
-            };
-            let addr6 = if let Some(val) = db.get("addr6")? {
-                String::from_utf8(val.to_vec())?
-            } else {
-                String::new()
-            };
-            let mode = if let Some(val) = db.get("mode")? {
-                String::from_utf8(val.to_vec())?
-            } else {
-                String::new()
-            };
-
-            Ok(NetworkSettings {
-                addr: addr,
-                addr6: addr6,
-                mode: mode.parse().unwrap_or(NetworkMode::Auto),
-            })
+        Ok(NetworkSettings {
+            addr: addr,
+            addr6: addr6,
+            mode: mode.parse().unwrap_or(NetworkMode::Auto),
+            proxy_url: proxy_url,
+            proxy_username: proxy_username,
+            proxy_password: proxy_password,
         })
         .await?
     }
@@ -261,52 +285,4 @@ impl AppState {
         })
         .await?
     }
-
-    pub fn set_proxy_settings(
-        &self,
-        proxy_url: Option<String>,
-        username: Option<String>,
-        password: Option<String>,
-    ) -> Result<()> {
-        let db = self.db.clone();
-
-        if let Some(url) = proxy_url {
-            if url.is_empty() {
-                db.remove("proxy_url")?;
-            } else {
-                db.insert("proxy_url", url.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_url")?;
-        }
-
-        if let Some(user) = username {
-            if user.is_empty() {
-                db.remove("proxy_username")?;
-            } else {
-                db.insert("proxy_username", user.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_username")?;
-        }
-
-        if let Some(pass) = password {
-            if pass.is_empty() {
-                db.remove("proxy_password")?;
-            } else {
-                db.insert("proxy_password", pass.as_bytes())?;
-            }
-        } else {
-            db.remove("proxy_password")?;
-        }
-
-        Ok(())
-    }
-}
-
-fn get_or_create_secret() -> SecretKey {
-    let key = SecretKey::generate(&mut rand::rng());
-    let key_str = hex::encode(key.to_bytes());
-    eprintln!("using secret key {key_str}");
-    key
 }
