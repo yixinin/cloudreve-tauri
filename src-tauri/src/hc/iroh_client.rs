@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::str::FromStr;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use std::vec::Vec;
 
@@ -65,9 +66,8 @@ impl ConnectionPool {
         }
     }
 }
+
 pub struct IrohClient {
-    // endpoint: Arc<Endpoint>,
-    // addr: EndpointAddr,
     connection_pool: Arc<ConnectionPool>,
 }
 
@@ -86,7 +86,6 @@ impl IrohClient {
             connection_pool: Arc::new(ConnectionPool::new(addr)),
         }
     }
-
     async fn send_request<R, T>(&self, req: Request<R>) -> Result<Response<T>>
     where
         R: serde::Serialize,
@@ -249,4 +248,15 @@ fn get_or_create_secret() -> SecretKey {
     let key_str = hex::encode(key.to_bytes());
     eprintln!("using secret key {key_str}");
     key
+}
+pub fn parse_subdomain(subdomain: &str) -> anyhow::Result<iroh::EndpointAddr> {
+    // first try to parse as a endpoint id
+    if let Ok(endpoint_id) = iroh::EndpointId::from_str(subdomain) {
+        return Ok(iroh::EndpointAddr::new(endpoint_id));
+    }
+    // then try to parse as a endpoint ticket
+    if let Ok(ticket) = dumbpipe::EndpointTicket::from_str(subdomain) {
+        return Ok(ticket.endpoint_addr().clone());
+    }
+    Err(anyhow::anyhow!("invalid subdomain"))
 }

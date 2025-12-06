@@ -4,7 +4,7 @@ use iroh::{Endpoint, EndpointAddr};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::hc::iroh_client::IrohClient;
+use crate::hc::iroh_client::{self, IrohClient};
 use crate::hc::std::ReqwestClient;
 use crate::hc::{HttpClient, Request, Response};
 
@@ -153,18 +153,18 @@ pub enum HttpClientDispatcher {
 // 客户端管理器，负责创建和管理不同类型的HTTP客户端
 #[derive(Clone)]
 pub struct HttpClientManager {
-    iroh_addr: Option<EndpointAddr>,
+    iroh_client: Option<IrohClient>,
 }
 
 impl HttpClientManager {
     // 创建一个新的客户端管理器
     pub fn new() -> Self {
-        Self { iroh_addr: None }
+        Self { iroh_client: None }
     }
 
     // 初始化Iroh端点（程序启动时调用）
     pub fn init_iroh_endpoint(&mut self, addr: EndpointAddr) -> Result<()> {
-        self.iroh_addr = Some(addr);
+        self.iroh_client = Some(iroh_client::IrohClient::new(addr));
         Ok(())
     }
 
@@ -172,15 +172,11 @@ impl HttpClientManager {
     pub async fn get_client(&self, client_type: ClientType) -> Result<HttpClientDispatcher> {
         match client_type {
             ClientType::Iroh => {
-                let addr = self
-                    .iroh_addr
-                    .clone()
-                    .ok_or_else(|| anyhow!("Iroh address not initialized"))?;
-
-                // 创建IrohClient并包装
-                let iroh_client = IrohClient::new(addr);
-                let wrapper = IrohClientWrapper(Arc::new(Mutex::new(iroh_client)));
-                Ok(HttpClientDispatcher::Iroh(wrapper))
+                if let Some(iroh_client) = self.iroh_client.clone() {
+                    let wrapper = IrohClientWrapper(Arc::new(Mutex::new(iroh_client)));
+                    return Ok(HttpClientDispatcher::Iroh(wrapper));
+                }
+                return Err(anyhow!("Iroh client not initialized"));
             }
             ClientType::Reqwest => {
                 // 获取Reqwest客户端

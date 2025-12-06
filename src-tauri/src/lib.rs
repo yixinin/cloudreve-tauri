@@ -47,9 +47,6 @@ pub fn run() {
 
             let settings = app_state.get_network_settings()?;
             app_state.init_base_url(&settings.get_addr())?;
-            if let Err(e) = app_state.init_iroh_endpoint() {
-                println!("Failed to initialize iroh endpoint: {}", e);
-            }
             if settings.mode == NetworkMode::P2P {
                 // 初始化iroh endpoint用于P2P模式
                 app_state.ct = ClientType::Iroh;
@@ -134,7 +131,7 @@ async fn set_network_settings(
 ) -> JsonResult<NetworkSettings> {
     let mut app = state.lock().await;
     app.set_addr(addr, addr6, mode).await?;
-    let settings = app.get_network_settings().await?;
+    let settings = app.get_network_settings()?;
     let addr = settings.get_addr();
     app.init_base_url(&addr)?;
     match settings.mode {
@@ -154,7 +151,7 @@ async fn get_network_settings(
     eprintln!("get_network_settings watting lock");
     let app = state.lock().await;
     eprintln!("get_network_settings get lock");
-    let settings = app.get_network_settings().await?;
+    let settings = app.get_network_settings()?;
     return Ok(settings);
 }
 
@@ -455,7 +452,7 @@ async fn pre_upload(
     let ack = app
         .upload_file_session(&mime_type, &uri, size, &policy_id)
         .await?;
-    let addr = app.get_network_settings().await?.get_addr();
+    let addr = app.get_network_settings()?.get_addr();
     let upload = Upload {
         id: id,
         file_path: file_path.to_string_lossy().to_string(),
