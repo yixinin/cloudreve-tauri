@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::Vec;
 
@@ -9,7 +9,7 @@ use bytes::Buf;
 use http::Request as HttpRequest;
 use http_body_util::{BodyExt, Full};
 use hyper_util::rt::TokioIo;
-use iroh::endpoint::Connection;
+use iroh::endpoint::{Connection, TransportConfig};
 use iroh::{EndpointAddr, SecretKey};
 use serde::de::DeserializeOwned;
 use tokio::sync::Mutex;
@@ -41,6 +41,7 @@ impl ConnectionPool {
         // 如果有可用连接则复用
         if let Some((conn, _)) = connections.pop_front() {
             if conn.close_reason().is_none() {
+                eprintln!("Reusing existing connection");
                 return Ok(conn);
             }
         }
@@ -48,10 +49,16 @@ impl ConnectionPool {
         // 释放锁后再进行异步操作
         drop(connections); // 释放锁后再进行异步连接
 
+        let mut tp_cfg = TransportConfig::default();
+        tp_cfg.keep_alive_interval(Some(Duration::from_secs(30)));
+        tp_cfg.max_idle_timeout(Some(self.max_idle_time.try_into()?));
         let endpoint = iroh::Endpoint::builder()
             .secret_key(get_or_create_secret())
+            .transport_config(tp_cfg)
             .bind()
             .await?;
+
+        eprintln!("Creating new connection");
 
         let conn = endpoint.connect(self.addr.clone(), dumbpipe::ALPN).await?;
         Ok(conn)
@@ -63,6 +70,8 @@ impl ConnectionPool {
             if connections.len() < 5 {
                 connections.push_back((conn, Instant::now()));
             }
+        } else {
+            eprintln!("Connection closed, not releasing");
         }
     }
 }
