@@ -28,6 +28,7 @@ const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [addr, setAddr] = useState("");
   const [addr6, setAddr6] = useState("");
+  const [irohEndpoint, setIrohEndpoint] = useState("");
   const [networkMode, setNetworkMode] = useState<NetworkMode>(NetworkMode.Auto);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -43,6 +44,7 @@ const LoginPage: React.FC = () => {
         const settings = await getNetworkSetting();
         setAddr(settings.addr);
         setAddr6(settings.addr6);
+        setIrohEndpoint(settings.iroh_endpoint);
         setNetworkMode(settings.mode);
         setStep(1);
       } catch (error) {
@@ -75,7 +77,7 @@ const LoginPage: React.FC = () => {
 
   const handleNetworkSetting = async () => {
     try {
-      await setNetworkSettings(addr, addr6, networkMode);
+      await setNetworkSettings(addr, addr6, irohEndpoint, networkMode);
       setStep(1);
     } catch {
       console.error("Failed to set network settings");
@@ -121,6 +123,16 @@ const LoginPage: React.FC = () => {
               margin="normal"
               value={addr6}
               onChange={(e) => setAddr6(e.target.value)}
+            />
+            <TextField
+              label="Iroh端点地址"
+              variant="outlined"
+              fullWidth
+              margin="normal"
+              placeholder="iroh://..."
+              value={irohEndpoint}
+              onChange={(e) => setIrohEndpoint(e.target.value)}
+              helperText="用于Iroh P2P网络连接的端点地址"
             />
             <FormControl size="small" fullWidth>
               <Select

@@ -4,7 +4,7 @@ pub mod quinn_endpoint;
 pub mod std;
 pub mod url;
 
-use ::std::{fmt::format, str::FromStr};
+use ::std::{any::TypeId, fmt::format, mem, str::FromStr};
 
 use http::Method;
 use serde::de::DeserializeOwned;
@@ -38,6 +38,29 @@ impl<T> Response<T> {
 
     pub fn into_data(self) -> T {
         self.data
+    }
+}
+
+/// 为Response<T>实现的扩展trait，提供into_bytes方法
+pub trait ResponseExt<T> {
+    /// 尝试将响应数据转换为Vec<u8>
+    /// 如果数据本身就是Vec<u8>，直接返回
+    /// 否则尝试将其序列化为JSON，然后返回JSON字节
+    fn into_bytes(self) -> Vec<u8>;
+}
+
+impl<T> ResponseExt<T> for Response<T>
+where
+    T: serde::Serialize + 'static,
+{
+    fn into_bytes(self) -> Vec<u8> {
+        // 直接尝试序列化为JSON
+        if let Ok(json_bytes) = serde_json::to_vec(&self.data) {
+            json_bytes
+        } else {
+            // 如果序列化失败，返回空向量
+            Vec::new()
+        }
     }
 }
 
@@ -90,22 +113,22 @@ impl<T> Request<T> {
 }
 
 pub trait HttpClient {
-    async fn get<T>(self, req: Request<()>) -> anyhow::Result<Response<T>>
+    async fn get<T>(&self, req: Request<()>) -> anyhow::Result<Response<T>>
     where
         T: DeserializeOwned;
 
-    async fn head<R>(self, req: Request<R>) -> anyhow::Result<Response<()>>
+    async fn head<R>(&self, req: Request<R>) -> anyhow::Result<Response<()>>
     where
         R: serde::Serialize;
-    async fn post<R, T>(self, req: Request<R>) -> anyhow::Result<Response<T>>
+    async fn post<R, T>(&self, req: Request<R>) -> anyhow::Result<Response<T>>
     where
         R: serde::Serialize,
         T: DeserializeOwned;
-    async fn put<R, T>(self, req: Request<R>) -> anyhow::Result<Response<T>>
+    async fn put<R, T>(&self, req: Request<R>) -> anyhow::Result<Response<T>>
     where
         R: serde::Serialize,
         T: DeserializeOwned;
-    async fn delete<T>(self, req: Request<()>) -> anyhow::Result<Response<T>>
+    async fn delete<T>(&self, req: Request<()>) -> anyhow::Result<Response<T>>
     where
         T: DeserializeOwned;
 }

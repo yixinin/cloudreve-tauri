@@ -83,7 +83,12 @@ const VideoPlayerPage: React.FC = () => {
                 if (uri) {
                     const videoUrl = await getURL(uri);
                     console.log("fetch video url: ", videoUrl);
-                    setFileUrl(videoUrl);
+                    
+                    // 将普通URL转换为iroh://协议URL，视频流将通过Iroh网络传输
+                    const encodedUrl = btoa(encodeURIComponent(videoUrl));
+                    const irohUrl = `iroh://${encodedUrl}`;
+                    
+                    setFileUrl(irohUrl);
                 }
             }
             catch (err) {
@@ -94,7 +99,7 @@ const VideoPlayerPage: React.FC = () => {
         }
 
         loadVideoUrl()
-    }, [fileUrl]);
+    }, [uri]);
 
     onBackKeyDown(() => {
         navigate(-1)

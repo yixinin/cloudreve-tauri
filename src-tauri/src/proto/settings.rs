@@ -46,6 +46,7 @@ impl fmt::Display for NetworkMode {
 pub struct NetworkSettings {
     pub addr: String,
     pub addr6: String,
+    pub iroh_endpoint: String,
     pub mode: NetworkMode,
 }
 
@@ -59,6 +60,20 @@ impl NetworkSettings {
     }
 
     pub fn get_addr(&self) -> String {
+        // P2P模式使用实际的Iroh端点地址
+        if self.mode == NetworkMode::P2P {
+            // 优先使用专门的iroh_endpoint字段作为Iroh端点地址
+            if !self.iroh_endpoint.is_empty() {
+                return self.iroh_endpoint.clone();
+            }
+            // 如果iroh_endpoint为空，尝试使用addr字段
+            if !self.addr.is_empty() {
+                return self.addr.clone();
+            }
+            // 如果都为空，使用默认的P2P地址标记
+            return "iroh://p2p".to_string();
+        }
+
         // 选择合适的地址
         let selected_addr = if !self.addr6.is_empty() {
             match self.mode {
@@ -76,7 +91,7 @@ impl NetworkSettings {
         } else {
             &self.addr
         };
-        
+
         // 确保地址有正确的协议前缀
         if selected_addr.starts_with("http") {
             return selected_addr.clone();

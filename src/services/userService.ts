@@ -73,6 +73,7 @@ export interface LoginData {
 export interface NetworkSettings {
     addr: string,
     addr6: string,
+    iroh_endpoint: string,
     mode: NetworkMode,
 }
 
@@ -93,9 +94,9 @@ export const getNetworkSetting = async (): Promise<NetworkSettings> => {
     }
 }
 
-export const setNetworkSettings = async (addr: string, addr6: string, mode: NetworkMode): Promise<boolean> => {
+export const setNetworkSettings = async (addr: string, addr6: string, irohEndpoint: string, mode: NetworkMode): Promise<boolean> => {
     try {
-        const ack = await invoke<boolean>('set_network_settings', { addr, addr6, mode });
+        const ack = await invoke<boolean>('set_network_settings', { addr, addr6, irohEndpoint: irohEndpoint, mode });
         return ack;
     } catch (error) {
         console.error('save network setting error:', error);

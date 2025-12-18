@@ -20,14 +20,14 @@ impl Clone for ReqwestClient {
 }
 
 impl HttpClient for ReqwestClient {
-    async fn get<T>(self, req: Request<()>) -> Result<Response<T>>
+    async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
     where
         T: DeserializeOwned,
     {
         self.send_request(req).await
     }
 
-    async fn head<R>(self, req: Request<R>) -> Result<Response<()>>
+    async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
     where
         R: serde::Serialize,
     {
@@ -51,7 +51,7 @@ impl HttpClient for ReqwestClient {
         Ok(Response::new(status, headers, ()))
     }
 
-    async fn post<R, T>(self, req: Request<R>) -> Result<Response<T>>
+    async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
     where
         R: serde::Serialize,
         T: DeserializeOwned,
@@ -59,7 +59,7 @@ impl HttpClient for ReqwestClient {
         self.send_request(req).await
     }
 
-    async fn put<R, T>(self, req: Request<R>) -> Result<Response<T>>
+    async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
     where
         R: serde::Serialize,
         T: DeserializeOwned,
@@ -67,7 +67,7 @@ impl HttpClient for ReqwestClient {
         self.send_request(req).await
     }
 
-    async fn delete<T>(self, req: Request<()>) -> Result<Response<T>>
+    async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
     where
         T: DeserializeOwned,
     {
@@ -77,7 +77,7 @@ impl HttpClient for ReqwestClient {
 
 impl ReqwestClient {
     // 辅助方法，用于发送带或不带请求体的请求
-    async fn send_request<R, T>(self, req: Request<R>) -> Result<Response<T>>
+    async fn send_request<R, T>(&self, req: Request<R>) -> Result<Response<T>>
     where
         R: serde::Serialize,
         T: DeserializeOwned,

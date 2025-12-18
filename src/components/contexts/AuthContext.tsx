@@ -73,14 +73,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // 冷启动时验证token
     useEffect(() => {
-        checkAuth();
+        // 检查本地是否有用户数据
+        const userData = localStorage.getItem('userData');
+        if (userData) {
+            // 只有当有用户数据时才调用checkAuth
+            checkAuth();
+        } else {
+            // 没有用户数据时直接跳转到登录页面
+            navigate("/login");
+        }
     }, []);
 
     useEffect(() => {
         if (isAuthenticated) {
             navigate("/files")
-        } else {
-            navigate("/login")
         }
     }, [isAuthenticated])
     const login = (user: User) => {

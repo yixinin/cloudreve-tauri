@@ -160,13 +160,18 @@ impl super::AppState {
         }
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
+        let client = self.get_client().await?;
+        self.batch_urls_with_client(urls, client).await
+    }
+
+    pub async fn batch_urls_with_client(
+        &self,
+        urls: Vec<String>,
+        client: crate::hc::http_client_manager::HttpClientDispatcher,
+    ) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
         let req = self.request_with_body(Method::POST, "/file/url", req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<_, proto::Ack<BatchUrlsAck>>(req)
-            .await?;
+        let resp = client.post::<_, proto::Ack<BatchUrlsAck>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
@@ -182,16 +187,21 @@ impl super::AppState {
     }
 
     pub async fn get_thumb_url(&self, uri: String) -> Result<String> {
+        let client = self.get_client().await?;
+        self.get_thumb_url_with_client(uri, client).await
+    }
+
+    pub async fn get_thumb_url_with_client(
+        &self,
+        uri: String,
+        client: crate::hc::http_client_manager::HttpClientDispatcher,
+    ) -> Result<String> {
         let req = self.request_with_query(
             Method::GET,
             "/file/thumb",
             std::collections::HashMap::from([("uri", uri)]),
         )?;
-        let resp = self
-            .get_client()
-            .await?
-            .get::<proto::Ack<GetThumbURLAck>>(req)
-            .await?;
+        let resp = client.get::<proto::Ack<GetThumbURLAck>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {

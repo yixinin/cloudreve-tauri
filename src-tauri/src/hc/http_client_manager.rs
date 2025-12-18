@@ -43,25 +43,23 @@ pub trait HttpClientWrapper: Send + Sync {
 
 // 为IrohClient实现包装器
 #[derive(Clone)]
-pub struct IrohClientWrapper(Arc<Mutex<IrohClient>>);
+pub struct IrohClientWrapper(Arc<IrohClient>);
 
 impl HttpClientWrapper for IrohClientWrapper {
     async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
-        // 获取锁并克隆IrohClient，然后调用其get方法
-        let client = self.0.lock().await.clone();
-        client.get(req).await
+        // 直接使用IrohClient实例调用其get方法
+        self.0.get(req).await
     }
 
     async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
     where
         R: serde::Serialize,
     {
-        // 获取锁并克隆IrohClient，然后调用其head方法
-        let client = self.0.lock().await.clone();
-        client.head(req).await
+        // 直接使用IrohClient实例调用其head方法
+        self.0.head(req).await
     }
 
     async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
@@ -69,9 +67,8 @@ impl HttpClientWrapper for IrohClientWrapper {
         R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
-        // 获取锁并克隆IrohClient，然后调用其post方法
-        let client = self.0.lock().await.clone();
-        client.post(req).await
+        // 直接使用IrohClient实例调用其post方法
+        self.0.post(req).await
     }
 
     async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
@@ -79,18 +76,16 @@ impl HttpClientWrapper for IrohClientWrapper {
         R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
-        // 获取锁并克隆IrohClient，然后调用其put方法
-        let client = self.0.lock().await.clone();
-        client.put(req).await
+        // 直接使用IrohClient实例调用其put方法
+        self.0.put(req).await
     }
 
     async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
-        // 获取锁并克隆IrohClient，然后调用其delete方法
-        let client = self.0.lock().await.clone();
-        client.delete(req).await
+        // 直接使用IrohClient实例调用其delete方法
+        self.0.delete(req).await
     }
 }
 
@@ -173,7 +168,7 @@ impl HttpClientManager {
         match client_type {
             ClientType::Iroh => {
                 if let Some(iroh_client) = self.iroh_client.clone() {
-                    let wrapper = IrohClientWrapper(Arc::new(Mutex::new(iroh_client)));
+                    let wrapper = IrohClientWrapper(Arc::new(iroh_client));
                     return Ok(HttpClientDispatcher::Iroh(wrapper));
                 }
                 return Err(anyhow!("Iroh client not initialized"));

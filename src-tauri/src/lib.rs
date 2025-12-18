@@ -1,11 +1,12 @@
 use crate::hc::http_client_manager::{ClientType, HttpClientWrapper};
 use crate::hc::Request;
-use http::{Method, Version};
+use base64::{self, engine::general_purpose::STANDARD, Engine};
+use http::{HeaderMap, Method, Version};
 use std::{
     collections::{HashMap, HashSet},
     path::{self},
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
 
@@ -41,18 +42,37 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("iroh", move |app_context, request| {
+            // 创建一个简单的响应，告知用户该功能尚未完全实现
+            let body = "Iroh protocol handler not fully implemented yet"
+                .as_bytes()
+                .to_vec();
+            tauri::http::Response::builder()
+                .status(501)
+                .header("Content-Type", "text/plain")
+                .body(body)
+                .unwrap()
+        })
         .setup(|app| {
             let app_handle = app.handle();
             let mut app_state = app::AppState::new(&app_handle)?;
 
             let settings = app_state.get_network_settings()?;
-            app_state.init_base_url(&settings.get_addr())?;
+            app_state.init_base_url(&settings)?;
             if settings.mode == NetworkMode::P2P {
-                // 初始化iroh endpoint用于P2P模式
-                app_state.ct = ClientType::Iroh;
+                // 只有当有实际的Iroh端点地址时，才使用Iroh客户端
+                if settings.get_addr() != "iroh://p2p" {
+                    app_state.ct = ClientType::Iroh;
+                    println!("Using Iroh client for P2P mode");
+                } else {
+                    // 如果是默认的P2P标记，使用Reqwest客户端
+                    app_state.ct = ClientType::Reqwest;
+                    println!("Using Reqwest client for default P2P mode");
+                }
             }
 
             app.manage(Mutex::new(app_state));
+
             #[cfg(dev)]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -127,21 +147,34 @@ async fn set_network_settings(
     state: tauri::State<'_, Mutex<AppState>>,
     addr: Option<String>,
     addr6: Option<String>,
+    iroh_endpoint: Option<String>,
     mode: NetworkMode,
 ) -> JsonResult<NetworkSettings> {
     let mut app = state.lock().await;
-    app.set_addr(addr, addr6, mode).await?;
+    app.set_addr(addr, addr6, iroh_endpoint, mode).await?;
     let settings = app.get_network_settings()?;
     let addr = settings.get_addr();
-    app.init_base_url(&addr)?;
+
+    // 初始化基础URL
+    app.init_base_url(&settings)?;
+
+    // 根据网络模式设置客户端类型
     match settings.mode {
         NetworkMode::P2P => {
-            app.ct = hc::http_client_manager::ClientType::Iroh;
+            // 只有当addr不是默认的"iroh://p2p"时，才使用Iroh客户端
+            // 这样可以确保只有在提供了实际的Iroh端点地址时才使用P2P模式
+            if addr != "iroh://p2p" {
+                app.ct = hc::http_client_manager::ClientType::Iroh;
+            } else {
+                // 如果是默认地址，回退到Reqwest客户端
+                app.ct = hc::http_client_manager::ClientType::Reqwest;
+            }
         }
         _ => {
             app.ct = hc::http_client_manager::ClientType::Reqwest;
         }
     }
+
     return Ok(settings);
 }
 #[tauri::command]
@@ -267,7 +300,12 @@ async fn search_files(
 #[tauri::command]
 async fn get_url(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonResult<String> {
     let app = state.lock().await;
-    let ack = app.batch_urls(vec![uri.clone()]).await;
+    // 确保始终使用Iroh客户端获取URL
+    let client = app
+        .hcm
+        .get_client(hc::http_client_manager::ClientType::Iroh)
+        .await?;
+    let ack = app.batch_urls_with_client(vec![uri.clone()], client).await;
     match ack {
         Ok(ack) => {
             for v in ack.urls {
@@ -285,7 +323,12 @@ async fn get_thumb_url(
     uri: String,
 ) -> JsonResult<String> {
     let app = state.lock().await;
-    app.get_thumb_url(uri).await
+    // 使用Iroh客户端获取缩略图URL
+    let client = app
+        .hcm
+        .get_client(hc::http_client_manager::ClientType::Iroh)
+        .await?;
+    app.get_thumb_url_with_client(uri, client).await
 }
 
 #[derive(Clone, Serialize)]

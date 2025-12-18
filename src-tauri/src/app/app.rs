@@ -4,7 +4,7 @@ use crate::{
     hc::{
         self,
         http_client_manager::{HttpClientDispatcher, HttpClientManager},
-        iroh_client, HttpClient, Request,
+        iroh_client, Request,
     },
     proto::{
         login::Token,
@@ -13,8 +13,7 @@ use crate::{
 };
 use anyhow::Result;
 use http::Method;
-use iroh::{Endpoint, SecretKey};
-use sled::{Db, Mode};
+use sled::Db;
 use tauri::Manager;
 
 pub struct AppState {
@@ -75,12 +74,61 @@ impl AppState {
         self.hcm.get_client(self.ct).await
     }
 
-    pub fn init_base_url(&mut self, base_url: &str) -> Result<()> {
-        self.base_url = format!("{}/api/v4", base_url);
+    pub fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {
+        eprintln!("init base url: {:?}", settings);
+        // 决定HTTP地址：根据mode和网络连通性选择IPv6或IPv4
+        let http_addr = if !settings.addr6.is_empty() {
+            match settings.mode {
+                NetworkMode::IPv6 => &settings.addr6,
+                NetworkMode::Auto => {
+                    // 使用本地网络接口检查而非外部连接
+                    if crate::net::has_ipv6_connectivity() {
+                        &settings.addr6
+                    } else {
+                        &settings.addr
+                    }
+                }
+                NetworkMode::P2P => {
+                    // P2P模式下，HTTP地址可能不被使用，但仍需要设置默认值
+                    &settings.addr
+                }
+                _ => &settings.addr,
+            }
+        } else {
+            &settings.addr
+        };
+
+        // 构建带有正确协议的HTTP地址
+        let full_http_addr = if http_addr.starts_with("http") {
+            http_addr.clone()
+        } else {
+            format!("https://{}", http_addr)
+        };
+        self.base_url = format!("{}/api/v4", full_http_addr);
         println!("init base url: {}", &self.base_url);
-        let token = "endpointaanltmlir7wb4q5yccze2qsgnz2e2ds5qutaii4jhwuzc3fnesbl4biaf5uhi5dqom5c6l3von3tcljrfzzgk3dbpexg4mbonfzg62bnmnqw4ylspexgs4tpnaxgy2lonmxc6aiavqlaabhk4ebacafx64ahpaplaeaqciabbw4aaaiaaaaaaaaaaaaaabhl4ebacajebgfcqdvvn4aaaaaaaaaaadlk5pqqe";
-        if let Ok(addr) = iroh_client::parse_subdomain(token) {
-            self.hcm.init_iroh_endpoint(addr);
+
+        // 处理P2P模式下的Iroh端点
+        if settings.mode == NetworkMode::P2P {
+            // 优先使用专门的iroh_endpoint字段作为Iroh端点地址
+            let iroh_addr = if !settings.iroh_endpoint.is_empty() {
+                settings.iroh_endpoint.clone()
+            } else {
+                "iroh://p2p".to_string()
+            };
+
+            // 检查是否是默认的P2P标记
+            if iroh_addr != "iroh://p2p" {
+                // 初始化Iroh端点 - 使用实际的端点地址（去掉iroh://前缀）
+                if let Ok(addr) = iroh_client::parse_subdomain(&iroh_addr) {
+                    self.hcm.init_iroh_endpoint(addr.clone())?;
+                    println!("Iroh endpoint initialized with address: {:?}", addr);
+                } else {
+                    println!("Failed to parse Iroh endpoint address: {}", iroh_addr);
+                }
+            } else {
+                // 如果是默认的P2P标记，不初始化Iroh端点
+                println!("Using default P2P address marker, skipping Iroh endpoint initialization");
+            }
         }
 
         Ok(())
@@ -171,6 +219,11 @@ impl AppState {
         } else {
             String::new()
         };
+        let iroh_endpoint = if let Some(val) = db.get("iroh_endpoint")? {
+            String::from_utf8(val.to_vec())?
+        } else {
+            String::new()
+        };
         let mode = if let Some(val) = db.get("mode")? {
             String::from_utf8(val.to_vec())?
         } else {
@@ -180,6 +233,7 @@ impl AppState {
         Ok(NetworkSettings {
             addr: addr,
             addr6: addr6,
+            iroh_endpoint: iroh_endpoint,
             mode: mode.parse().unwrap_or(NetworkMode::Auto),
         })
     }
@@ -188,11 +242,13 @@ impl AppState {
         &self,
         addr: Option<String>,
         addr6: Option<String>,
+        iroh_endpoint: Option<String>,
         mode: NetworkMode,
     ) -> Result<()> {
         let db = self.db.clone();
         let addr_clone = addr.clone();
         let addr6_clone = addr6.clone();
+        let iroh_endpoint_clone = iroh_endpoint.clone();
 
         // 使用spawn_blocking将阻塞的数据库操作移到单独的线程
         tokio::task::spawn_blocking(move || {
@@ -201,6 +257,9 @@ impl AppState {
             }
             if let Some(value) = addr6_clone {
                 db.insert("addr6", value.as_bytes())?;
+            }
+            if let Some(value) = iroh_endpoint_clone {
+                db.insert("iroh_endpoint", value.as_bytes())?;
             }
 
             db.insert("mode", mode.to_string().as_bytes())?;
