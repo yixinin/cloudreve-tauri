@@ -137,6 +137,8 @@ pub trait HttpClient {
     where
         T: DeserializeOwned;
 
+    async fn get_bytes(&self, req: Request) -> anyhow::Result<Response<Bytes>>;
+
     async fn head(&self, req: Request) -> anyhow::Result<Response<()>>;
 
     async fn post<T>(&self, req: Request) -> anyhow::Result<Response<T>>

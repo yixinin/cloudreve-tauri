@@ -124,8 +124,11 @@ export const getURL = async (uri: string) => {
 
 export const getThumbURL = async (uri: string) => {
     try {
-        const response = await invoke<string>('get_thumb_url', { uri });
-        return response;
+        const imageUrl = await invoke<string>('get_thumb_url', { uri });
+        // 将普通URL转换为iroh://协议URL，视频流将通过Iroh网络传输
+        const encodedUrl = btoa(encodeURIComponent(imageUrl));
+        const irohUrl = `http://iroh.localhost/${encodedUrl}`;
+        return irohUrl;
     } catch (error) {
         console.error('Failed to get file thumb url:', error);
         throw error;

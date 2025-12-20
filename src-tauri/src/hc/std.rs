@@ -2,6 +2,8 @@ use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use http::Method;
 use serde::de::DeserializeOwned;
+use std::any::TypeId;
+use std::mem;
 
 use crate::hc::{HttpClient, Request, Response};
 
@@ -26,6 +28,41 @@ impl HttpClient for ReqwestClient {
         T: DeserializeOwned,
     {
         self.send_request(req).await
+    }
+
+    async fn get_bytes(&self, req: Request) -> Result<Response<Bytes>> {
+        let mut req_builder = self.0.request(req.method.clone(), &req.url);
+
+        // 添加headers
+        for (key, value) in &req.headers {
+            if let Some(value_str) = value.to_str().ok() {
+                req_builder = req_builder.header(key.as_str(), value_str);
+            }
+        }
+
+        // 添加请求体
+        if let Some(body) = req.body {
+            req_builder = req_builder.body(body);
+        } else if req.method != Method::GET && req.method != Method::DELETE {
+            // 对于非GET/DELETE请求，设置空body
+            req_builder = req_builder.body(Bytes::new());
+        }
+
+        let response = req_builder
+            .send()
+            .await
+            .map_err(|e| anyhow!("Failed to send request: {}", e))?;
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        // 获取原始字节
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| anyhow!("Failed to read response body as bytes: {}", e))?;
+
+        Ok(Response::new(status, headers, bytes))
     }
 
     async fn head(&self, req: Request) -> Result<Response<()>> {
@@ -102,7 +139,7 @@ impl ReqwestClient {
         let status = response.status();
         let headers = response.headers().clone();
 
-        // 解析响应体
+        // 将响应解析为JSON
         let data = response
             .json::<T>()
             .await

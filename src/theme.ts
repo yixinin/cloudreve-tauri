@@ -34,15 +34,6 @@ export const androidTheme = createTheme({
                 }
             }
         },
-        MuiBox: {
-            styleOverrides: {
-                root: {
-                    scrollbarWidth: 'thin',
-                    '&::-webkit-scrollbar': { width: 6, height: 6 },
-                    '&::-webkit-scrollbar-thumb': { borderRadius: 3, backgroundColor: 'rgba(0,0,0,0.2)' },
-                    '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' }
-                }
-            }
-        }
+
     }
 });

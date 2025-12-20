@@ -41,6 +41,7 @@ tauri-plugin-store = { version = "2.4" }
 tauri-plugin-app-events = "0.2"
 tokio-util = "0.7"
 urlencoding = "2.1"
+url = "2.5"
 regex = "1.12"
 futures-util = "0.3"
 read-progress-stream = "1"

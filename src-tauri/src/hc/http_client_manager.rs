@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use enum_dispatch::enum_dispatch;
 use iroh::{Endpoint, EndpointAddr};
 use std::sync::Arc;
@@ -21,6 +22,8 @@ pub trait HttpClientWrapper: Send + Sync {
     async fn get<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned;
+
+    async fn get_bytes(&self, req: Request) -> Result<Response<Bytes>>;
 
     async fn head(&self, req: Request) -> Result<Response<()>>;
 
@@ -48,6 +51,11 @@ impl HttpClientWrapper for IrohClientWrapper {
     {
         // 直接使用IrohClient实例调用其get方法
         self.0.get(req).await
+    }
+
+    async fn get_bytes(&self, req: Request) -> Result<Response<Bytes>> {
+        // 直接使用IrohClient实例调用其get_bytes方法
+        self.0.get_bytes(req).await
     }
 
     async fn head(&self, req: Request) -> Result<Response<()>> {
@@ -91,6 +99,11 @@ impl HttpClientWrapper for ReqwestClientWrapper {
     {
         let client = self.0.clone();
         client.get(req).await
+    }
+
+    async fn get_bytes(&self, req: Request) -> Result<Response<Bytes>> {
+        let client = self.0.clone();
+        client.get_bytes(req).await
     }
 
     async fn head(&self, req: Request) -> Result<Response<()>> {

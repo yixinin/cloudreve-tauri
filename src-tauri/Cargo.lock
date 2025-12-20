@@ -1017,6 +1017,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
  "urlencoding",
  "walkdir",
 ]

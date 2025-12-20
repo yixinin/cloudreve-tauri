@@ -1,6 +1,7 @@
 use crate::hc::http_client_manager::{ClientType, HttpClientWrapper};
 use crate::hc::Request;
 use base64::{self, engine::general_purpose::STANDARD, Engine};
+use bytes::Bytes;
 use http::{HeaderMap, Method, Version};
 use std::{
     collections::{HashMap, HashSet},
@@ -9,6 +10,8 @@ use std::{
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
+use url::Url;
+use urlencoding;
 
 use crate::{
     app::AppState,
@@ -34,6 +37,19 @@ pub mod media;
 pub mod net;
 pub mod proto;
 pub mod transfer;
+
+fn decode_btoa_encoded_uri(encoded_str: &str) -> anyhow::Result<String> {
+    // 1. Base64解码
+    let decoded_bytes = STANDARD.decode(encoded_str.trim())?; // trim() 用于去除可能的空白字符
+
+    // 2. 将解码后的字节转换为字符串。这步得到的是百分号编码的URL。
+    let percent_encoded_url = String::from_utf8(decoded_bytes)?;
+
+    // 3. URL解码（百分号解码）
+    let final_url = urlencoding::decode(&percent_encoded_url)?.into_owned();
+
+    Ok(final_url)
+}
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,16 +58,111 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .register_uri_scheme_protocol("iroh", move |app_context, request| {
-            // 创建一个简单的响应，告知用户该功能尚未完全实现
-            let body = "Iroh protocol handler not fully implemented yet"
-                .as_bytes()
-                .to_vec();
-            tauri::http::Response::builder()
-                .status(501)
-                .header("Content-Type", "text/plain")
-                .body(body)
-                .unwrap()
+        .register_uri_scheme_protocol("iroh", |app_context, request| {
+            let app_handle = app_context.app_handle();
+            let uri = request.uri().to_string();
+            let uri = uri.trim_start_matches("iroh://localhost/");
+            eprintln!("Received iroh URI request: {}", uri);
+
+            // 使用block_on来执行异步操作
+            tauri::async_runtime::block_on(async move {
+                // 获取应用状态
+                let state = app_handle.state::<Mutex<AppState>>();
+                let app = state.lock().await;
+
+                eprintln!("Received iroh URI request: {}", uri);
+
+                // 解码URI
+                let decoded_uri = match decode_btoa_encoded_uri(&uri) {
+                    Ok(decoded) => decoded.to_string(),
+                    Err(e) => {
+                        eprintln!("Failed to decode URI: {}", e);
+                        return http::Response::builder()
+                            .status(400)
+                            .body(Vec::new())
+                            .unwrap();
+                    }
+                };
+
+                // 解析URI以获取路径和参数
+                let parsed_uri = match url::Url::parse(&decoded_uri) {
+                    Ok(uri) => uri,
+                    Err(e) => {
+                        eprintln!("Failed to parse URI: {}", e);
+                        return http::Response::builder()
+                            .status(400)
+                            .body(Vec::new())
+                            .unwrap();
+                    }
+                };
+                let path = parsed_uri.path();
+
+                // 获取网络设置和基础URL
+                let settings = match app.get_network_settings() {
+                    Ok(settings) => settings,
+                    Err(e) => {
+                        eprintln!("Failed to get network settings: {}", e);
+                        return http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .unwrap();
+                    }
+                };
+                let base_url = settings.get_addr();
+
+                // 构建完整的请求URL
+                let request_url = format!("{}{}", base_url, path);
+                eprintln!("Request URL: {}", request_url);
+
+                // 根据网络设置选择客户端类型
+                let client_type = if settings.mode == NetworkMode::P2P {
+                    ClientType::Iroh
+                } else {
+                    ClientType::Reqwest
+                };
+
+                // 获取客户端
+                let client = match app.hcm.get_client(client_type).await {
+                    Ok(client) => client,
+                    Err(e) => {
+                        eprintln!("Failed to get client: {}", e);
+                        return http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .unwrap();
+                    }
+                };
+
+                // 构建请求对象
+                let req = Request::new(Method::GET, &request_url, "");
+
+                // 发送请求并获取响应
+                match client.get_bytes(req).await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let data = response.into_data().to_vec();
+
+                        // 构建响应
+                        let mut http_response_builder = http::Response::builder().status(status);
+
+                        // 如果是成功响应，设置Content-Type
+                        if status.is_success() {
+                            http_response_builder = http_response_builder
+                                .header("Content-Type", "application/octet-stream");
+                        }
+
+                        // 返回响应
+                        http_response_builder.body(data).unwrap()
+                    }
+                    Err(e) => {
+                        eprintln!("Request failed: {}", e);
+                        http::Response::builder()
+                            .status(500)
+                            .body(Vec::new())
+                            .unwrap()
+                    }
+                }
+            })
         })
         .setup(|app| {
             let app_handle = app.handle();
@@ -122,8 +233,8 @@ pub fn run() {
             get_sync_status,
             get_sync_progress,
             trigger_sync,
-            toggle_sync,
             get_download_history,
+            proxy_image,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -653,6 +764,29 @@ async fn get_sync_progress() -> JsonResult<SyncProgress> {
 #[tauri::command]
 async fn trigger_sync() -> JsonResult<()> {
     Ok(())
+}
+
+#[tauri::command]
+async fn proxy_image(state: tauri::State<'_, Mutex<AppState>>, url: String) -> JsonResult<Vec<u8>> {
+    let app = state.lock().await;
+    // 使用Reqwest客户端获取图片数据
+    let client = app
+        .hcm
+        .get_client(hc::http_client_manager::ClientType::Reqwest)
+        .await?;
+
+    // 创建请求
+    let mut headers = HeaderMap::new();
+    headers.insert("User-Agent", "Cloudreve-Tauri/1.0".parse().unwrap());
+
+    // 使用 Request::new 方法创建请求对象，将完整URL作为base_url，path设为空
+    let req = Request::new(Method::GET, &url, "").with_header("User-Agent", "Cloudreve-Tauri/1.0");
+
+    // 发送请求并获取响应
+    let resp = client.get_bytes(req).await?;
+    let data = resp.into_data();
+
+    Ok(data.to_vec())
 }
 
 #[derive(Debug, Serialize)]
