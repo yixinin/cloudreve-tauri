@@ -37,7 +37,7 @@ impl super::AppState {
         let response = self
             .get_client()
             .await?
-            .put::<_, proto::Ack<String>>(req)
+            .put::<proto::Ack<String>>(req)
             .await?;
         let ack = response.into_data();
         if ack.code == 0 {
@@ -107,7 +107,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .post::<_, proto::Ack<String>>(req)
+            .post::<proto::Ack<String>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {

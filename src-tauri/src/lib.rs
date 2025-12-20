@@ -58,31 +58,36 @@ pub fn run() {
             let mut app_state = app::AppState::new(&app_handle)?;
 
             let settings = app_state.get_network_settings()?;
-            app_state.init_base_url(&settings)?;
-            if settings.mode == NetworkMode::P2P {
-                // 只有当有实际的Iroh端点地址时，才使用Iroh客户端
-                if settings.get_addr() != "iroh://p2p" {
-                    app_state.ct = ClientType::Iroh;
-                    println!("Using Iroh client for P2P mode");
-                } else {
-                    // 如果是默认的P2P标记，使用Reqwest客户端
-                    app_state.ct = ClientType::Reqwest;
-                    println!("Using Reqwest client for default P2P mode");
+            tauri::async_runtime::block_on(async move {
+                if let Err(e) = app_state.init_base_url(&settings).await {
+                    eprintln!("Error initializing base URL: {:?}", e);
                 }
-            }
+                // app_state.init_base_url(&settings).await?;
+                if settings.mode == NetworkMode::P2P {
+                    // 只有当有实际的Iroh端点地址时，才使用Iroh客户端
+                    if settings.get_addr() != "iroh://p2p" {
+                        app_state.ct = ClientType::Iroh;
+                        println!("Using Iroh client for P2P mode");
+                    } else {
+                        // 如果是默认的P2P标记，使用Reqwest客户端
+                        app_state.ct = ClientType::Reqwest;
+                        println!("Using Reqwest client for default P2P mode");
+                    }
+                }
+                app.manage(Mutex::new(app_state));
 
-            app.manage(Mutex::new(app_state));
+                #[cfg(dev)]
+                {
+                    let window = app.get_webview_window("main").unwrap();
+                    window.open_devtools();
+                }
+                #[cfg(mobile)]
+                {
+                    let app_handle = app.handle();
+                    app_handle.plugin(tauri_plugin_app_events::init())?;
+                }
+            });
 
-            #[cfg(dev)]
-            {
-                let window = app.get_webview_window("main").unwrap();
-                window.open_devtools();
-            }
-            #[cfg(mobile)]
-            {
-                let app_handle = app.handle();
-                app_handle.plugin(tauri_plugin_app_events::init())?;
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -156,7 +161,7 @@ async fn set_network_settings(
     let addr = settings.get_addr();
 
     // 初始化基础URL
-    app.init_base_url(&settings)?;
+    app.init_base_url(&settings).await?;
 
     // 根据网络模式设置客户端类型
     match settings.mode {

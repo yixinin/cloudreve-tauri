@@ -44,6 +44,7 @@ const ViewToggle: React.FC<ViewToggleProps> = ({
     const handleViewChange = (newView: ViewMode) => {
         setMode(newView)
         onViewModeChange(newView);
+        handleClose()
     };
 
     const handleShowThumbChange = (show: boolean) => {

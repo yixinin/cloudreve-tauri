@@ -32,11 +32,7 @@ impl super::AppState {
             password: pass.to_string(),
         };
         let req = self.request_with_body(Method::POST, "/session/token", request)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<_, Ack<LoginAck>>(req)
-            .await?;
+        let resp = self.get_client().await?.post::<Ack<LoginAck>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
@@ -66,7 +62,7 @@ impl super::AppState {
         };
 
         let req = self.request_with_body(Method::POST, "/session/token/refresh", request)?;
-        let resp = self.get_client().await?.post::<_, Ack<Token>>(req).await?;
+        let resp = self.get_client().await?.post::<Ack<Token>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
             return Ok(ack.data.unwrap());

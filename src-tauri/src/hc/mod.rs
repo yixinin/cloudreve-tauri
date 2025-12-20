@@ -1,3 +1,4 @@
+pub mod h3_iroh;
 pub mod http_client_manager;
 pub mod iroh_client;
 pub mod quinn_endpoint;
@@ -6,6 +7,7 @@ pub mod url;
 
 use ::std::{any::TypeId, fmt::format, mem, str::FromStr};
 
+use bytes::Bytes;
 use http::Method;
 use serde::de::DeserializeOwned;
 
@@ -64,14 +66,14 @@ where
     }
 }
 
-pub struct Request<T> {
+pub struct Request {
     method: Method,
     url: String,
     headers: http::HeaderMap,
-    body: Option<T>,
+    body: Option<Bytes>,
 }
 
-impl<T> Request<T> {
+impl Request {
     pub fn new(method: Method, base_url: &str, path: &str) -> Self {
         Self {
             method,
@@ -90,9 +92,24 @@ impl<T> Request<T> {
         self
     }
 
-    pub fn with_body(mut self, body: T) -> Self {
+    pub fn json<T>(mut self, body: T) -> anyhow::Result<Self>
+    where
+        T: serde::Serialize,
+    {
+        let body = serde_json::to_vec(&body)?;
+        let body = Bytes::copy_from_slice(&body);
         self.body = Some(body);
-        self
+        Ok(self)
+    }
+
+    pub fn form_data<T>(mut self, body: T) -> anyhow::Result<Self>
+    where
+        T: serde::Serialize,
+    {
+        let body = serde_urlencoded::to_string(body)?;
+        let body = Bytes::copy_from_slice(body.as_bytes());
+        self.body = Some(body);
+        Ok(self)
     }
 
     pub fn method(&self) -> &Method {
@@ -107,28 +124,28 @@ impl<T> Request<T> {
         &self.headers
     }
 
-    pub fn body(&self) -> Option<&T> {
-        self.body.as_ref()
+    pub fn body(self) -> Option<Bytes> {
+        match self.body {
+            Some(body) => Some(body),
+            None => None,
+        }
     }
 }
 
 pub trait HttpClient {
-    async fn get<T>(&self, req: Request<()>) -> anyhow::Result<Response<T>>
+    async fn get<T>(&self, req: Request) -> anyhow::Result<Response<T>>
     where
         T: DeserializeOwned;
 
-    async fn head<R>(&self, req: Request<R>) -> anyhow::Result<Response<()>>
+    async fn head(&self, req: Request) -> anyhow::Result<Response<()>>;
+
+    async fn post<T>(&self, req: Request) -> anyhow::Result<Response<T>>
     where
-        R: serde::Serialize;
-    async fn post<R, T>(&self, req: Request<R>) -> anyhow::Result<Response<T>>
-    where
-        R: serde::Serialize,
         T: DeserializeOwned;
-    async fn put<R, T>(&self, req: Request<R>) -> anyhow::Result<Response<T>>
+    async fn put<T>(&self, req: Request) -> anyhow::Result<Response<T>>
     where
-        R: serde::Serialize,
         T: DeserializeOwned;
-    async fn delete<T>(&self, req: Request<()>) -> anyhow::Result<Response<T>>
+    async fn delete<T>(&self, req: Request) -> anyhow::Result<Response<T>>
     where
         T: DeserializeOwned;
 }

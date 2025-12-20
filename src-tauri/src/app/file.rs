@@ -26,7 +26,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .put::<(), proto::Ack<Vec<FileSrouce>>>(req)
+            .put::<proto::Ack<Vec<FileSrouce>>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -62,7 +62,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .post::<_, proto::Ack<String>>(req)
+            .post::<proto::Ack<String>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -97,7 +97,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .post::<_, proto::Ack<String>>(req)
+            .post::<proto::Ack<String>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -150,7 +150,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .post::<_, proto::Ack<FileDetailsInfo>>(req)
+            .post::<proto::Ack<FileDetailsInfo>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -171,7 +171,7 @@ impl super::AppState {
     ) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
         let req = self.request_with_body(Method::POST, "/file/url", req)?;
-        let resp = client.post::<_, proto::Ack<BatchUrlsAck>>(req).await?;
+        let resp = client.post::<proto::Ack<BatchUrlsAck>>(req).await?;
         let ack = resp.into_data();
         if ack.code == 0 {
             if let Some(data) = ack.data {
@@ -224,7 +224,7 @@ impl super::AppState {
         let resp = self
             .get_client()
             .await?
-            .post::<_, proto::Ack<FileInfo>>(req)
+            .post::<proto::Ack<FileInfo>>(req)
             .await?;
         let ack = resp.into_data();
         if ack.code == 0 {
@@ -279,7 +279,7 @@ impl super::AppState {
         let response = self
             .get_client()
             .await?
-            .put::<_, proto::Ack<UploadSessionAck>>(req)
+            .put::<proto::Ack<UploadSessionAck>>(req)
             .await?;
         let ack = response.into_data();
         if ack.code == 0 {

@@ -39,10 +39,10 @@ impl AppState {
         })
     }
 
-    pub fn request(&self, method: Method, url: &str) -> Result<Request<()>> {
+    pub fn request(&self, method: Method, url: &str) -> Result<Request> {
         self.request_with_body(method, url, ())
     }
-    pub fn request_with_query<T>(&self, method: Method, url: &str, query: T) -> Result<Request<()>>
+    pub fn request_with_query<T>(&self, method: Method, url: &str, query: T) -> Result<Request>
     where
         T: serde::Serialize,
     {
@@ -52,7 +52,7 @@ impl AppState {
         )
     }
 
-    pub fn request_with_body<T>(&self, method: Method, url: &str, body: T) -> Result<Request<T>>
+    pub fn request_with_body<T>(&self, method: Method, url: &str, body: T) -> Result<Request>
     where
         T: serde::Serialize,
     {
@@ -66,15 +66,18 @@ impl AppState {
         req = req.with_header("Host", &host);
         if let Ok(tokens) = self.get_token_sync() {
             req = req.with_header("Authorization", &format!("Bearer {}", tokens.access_token));
+            eprintln!("token found: {:?}", tokens.access_token);
+        } else {
+            eprintln!("no token found");
         }
-        Ok(req.with_body(body))
+        Ok(req.json(body)?)
     }
 
     pub async fn get_client(&self) -> Result<HttpClientDispatcher> {
         self.hcm.get_client(self.ct).await
     }
 
-    pub fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {
+    pub async fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {
         eprintln!("init base url: {:?}", settings);
         // 决定HTTP地址：根据mode和网络连通性选择IPv6或IPv4
         let http_addr = if !settings.addr6.is_empty() {
@@ -120,7 +123,7 @@ impl AppState {
             if iroh_addr != "iroh://p2p" {
                 // 初始化Iroh端点 - 使用实际的端点地址（去掉iroh://前缀）
                 if let Ok(addr) = iroh_client::parse_subdomain(&iroh_addr) {
-                    self.hcm.init_iroh_endpoint(addr.clone())?;
+                    self.hcm.init_iroh_endpoint(&iroh_addr).await?;
                     println!("Iroh endpoint initialized with address: {:?}", addr);
                 } else {
                     println!("Failed to parse Iroh endpoint address: {}", iroh_addr);
@@ -191,6 +194,7 @@ impl AppState {
         self.get_token_sync()
     }
     pub async fn set_token(&self, token: Token) -> Result<()> {
+        eprintln!("set token: {:?}", token);
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
             db.insert("access_token", token.access_token.as_bytes())?;

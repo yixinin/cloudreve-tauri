@@ -18,25 +18,21 @@ pub enum ClientType {
 // 使用enum_dispatch宏使枚举能够分发到具体实现
 #[enum_dispatch]
 pub trait HttpClientWrapper: Send + Sync {
-    async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn get<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned;
 
-    async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
-    where
-        R: serde::Serialize;
+    async fn head(&self, req: Request) -> Result<Response<()>>;
 
-    async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn post<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned;
 
-    async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn put<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned;
 
-    async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn delete<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned;
 }
@@ -46,7 +42,7 @@ pub trait HttpClientWrapper: Send + Sync {
 pub struct IrohClientWrapper(Arc<IrohClient>);
 
 impl HttpClientWrapper for IrohClientWrapper {
-    async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn get<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -54,33 +50,28 @@ impl HttpClientWrapper for IrohClientWrapper {
         self.0.get(req).await
     }
 
-    async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
-    where
-        R: serde::Serialize,
-    {
+    async fn head(&self, req: Request) -> Result<Response<()>> {
         // 直接使用IrohClient实例调用其head方法
         self.0.head(req).await
     }
 
-    async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn post<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
         // 直接使用IrohClient实例调用其post方法
         self.0.post(req).await
     }
 
-    async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn put<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
         // 直接使用IrohClient实例调用其put方法
         self.0.put(req).await
     }
 
-    async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn delete<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -94,7 +85,7 @@ impl HttpClientWrapper for IrohClientWrapper {
 pub struct ReqwestClientWrapper(ReqwestClient);
 
 impl HttpClientWrapper for ReqwestClientWrapper {
-    async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn get<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -102,33 +93,28 @@ impl HttpClientWrapper for ReqwestClientWrapper {
         client.get(req).await
     }
 
-    async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
-    where
-        R: serde::Serialize,
-    {
+    async fn head(&self, req: Request) -> Result<Response<()>> {
         let client = self.0.clone();
         client.head(req).await
     }
 
-    async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn post<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
         let client = self.0.clone();
         client.post(req).await
     }
 
-    async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn put<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
         let client = self.0.clone();
         client.put(req).await
     }
 
-    async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn delete<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -158,8 +144,8 @@ impl HttpClientManager {
     }
 
     // 初始化Iroh端点（程序启动时调用）
-    pub fn init_iroh_endpoint(&mut self, addr: EndpointAddr) -> Result<()> {
-        self.iroh_client = Some(iroh_client::IrohClient::new(addr));
+    pub async fn init_iroh_endpoint(&mut self, ticket: &str) -> Result<()> {
+        self.iroh_client = Some(iroh_client::IrohClient::new(ticket).await?);
         Ok(())
     }
 

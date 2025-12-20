@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use bytes::Bytes;
 use http::Method;
 use serde::de::DeserializeOwned;
 
@@ -20,17 +21,14 @@ impl Clone for ReqwestClient {
 }
 
 impl HttpClient for ReqwestClient {
-    async fn get<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn get<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: DeserializeOwned,
     {
         self.send_request(req).await
     }
 
-    async fn head<R>(&self, req: Request<R>) -> Result<Response<()>>
-    where
-        R: serde::Serialize,
-    {
+    async fn head(&self, req: Request) -> Result<Response<()>> {
         // 对于HEAD请求，我们不关心响应体，所以可以使用泛型参数并忽略它
         let mut req_builder = self.0.request(Method::HEAD, &req.url);
         // 添加headers
@@ -51,23 +49,21 @@ impl HttpClient for ReqwestClient {
         Ok(Response::new(status, headers, ()))
     }
 
-    async fn post<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn post<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: DeserializeOwned,
     {
         self.send_request(req).await
     }
 
-    async fn put<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn put<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: DeserializeOwned,
     {
         self.send_request(req).await
     }
 
-    async fn delete<T>(&self, req: Request<()>) -> Result<Response<T>>
+    async fn delete<T>(&self, req: Request) -> Result<Response<T>>
     where
         T: DeserializeOwned,
     {
@@ -77,9 +73,8 @@ impl HttpClient for ReqwestClient {
 
 impl ReqwestClient {
     // 辅助方法，用于发送带或不带请求体的请求
-    async fn send_request<R, T>(&self, req: Request<R>) -> Result<Response<T>>
+    async fn send_request<T>(&self, req: Request) -> Result<Response<T>>
     where
-        R: serde::Serialize,
         T: DeserializeOwned,
     {
         let mut req_builder = self.0.request(req.method.clone(), &req.url);
@@ -93,10 +88,10 @@ impl ReqwestClient {
 
         // 添加请求体
         if let Some(body) = req.body {
-            req_builder = req_builder.json(&body);
+            req_builder = req_builder.body(body);
         } else if req.method != Method::GET && req.method != Method::DELETE {
             // 对于非GET/DELETE请求，设置空body
-            req_builder = req_builder.json(&serde_json::json!({}));
+            req_builder = req_builder.body(Bytes::new());
         }
 
         let response = req_builder
