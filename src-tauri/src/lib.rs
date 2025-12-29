@@ -32,7 +32,6 @@ use proto::{
 use serde::Serialize;
 
 pub mod app;
-pub mod hc;
 pub mod media;
 pub mod net;
 pub mod proto;
@@ -62,15 +61,12 @@ pub fn run() {
             let app_handle = app_context.app_handle();
             let uri = request.uri().to_string();
             let uri = uri.trim_start_matches("iroh://localhost/");
-            eprintln!("Received iroh URI request: {}", uri);
 
             // 使用block_on来执行异步操作
             tauri::async_runtime::block_on(async move {
                 // 获取应用状态
                 let state = app_handle.state::<Mutex<AppState>>();
                 let app = state.lock().await;
-
-                eprintln!("Received iroh URI request: {}", uri);
 
                 // 解码URI
                 let decoded_uri = match decode_btoa_encoded_uri(&uri) {
@@ -112,7 +108,6 @@ pub fn run() {
 
                 // 构建完整的请求URL
                 let request_url = format!("{}{}", base_url, path);
-                eprintln!("Request URL: {}", request_url);
 
                 // 根据网络设置选择客户端类型
                 let client_type = if settings.mode == NetworkMode::P2P {
@@ -133,26 +128,52 @@ pub fn run() {
                     }
                 };
 
-                // 构建请求对象
-                let req = Request::new(Method::GET, &request_url, "");
+                let method = request.method();
 
+                // 构建请求对象
+                let mut req = Request::new(method.to_owned(), &request_url, "");
+                req = req.with_headers(request.headers().clone());
+                req = req.with_body(Bytes::copy_from_slice(request.body()));
                 // 发送请求并获取响应
                 match client.get_bytes(req).await {
                     Ok(response) => {
                         let status = response.status();
+                        let headers = response.headers().clone();
                         let data = response.into_data().to_vec();
 
                         // 构建响应
                         let mut http_response_builder = http::Response::builder().status(status);
 
+                        for (key, value) in headers {
+                            eprintln!("h3 response header: {:?} {:?}", key, value);
+                            if let Some(key) = key {
+                                http_response_builder =
+                                    http_response_builder.header(key, value.to_owned());
+                            }
+                        }
+
                         // 如果是成功响应，设置Content-Type
                         if status.is_success() {
                             http_response_builder = http_response_builder
                                 .header("Content-Type", "application/octet-stream");
+                            http_response_builder = http_response_builder.header("Content-Length", data.len().to_string());
                         }
 
                         // 返回响应
-                        http_response_builder.body(data).unwrap()
+                        if let Ok(resp) = http_response_builder.body(data) {
+                            eprintln!("outgoing iroh response, method: {:?}, url: {:?}, status: {:?}, body size:{}", 
+                                &method,
+                                &request_url,
+                                resp.status(),
+                                resp.body().len()
+                            );
+                          return resp;
+                        } else {
+                            return http::Response::builder()
+                                .status(status)
+                                .body(Vec::new())
+                                .unwrap();
+                        }
                     }
                     Err(e) => {
                         eprintln!("Request failed: {}", e);

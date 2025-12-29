@@ -1,15 +1,8 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use crate::{
-    hc::{
-        self,
-        http_client_manager::{HttpClientDispatcher, HttpClientManager},
-        iroh_client, Request,
-    },
-    proto::{
-        login::Token,
-        settings::{NetworkMode, NetworkSettings},
-    },
+use crate::proto::{
+    login::Token,
+    settings::{NetworkMode, NetworkSettings},
 };
 use anyhow::Result;
 use http::Method;
@@ -71,10 +64,6 @@ impl AppState {
             eprintln!("no token found");
         }
         Ok(req.json(body)?)
-    }
-
-    pub async fn get_client(&self) -> Result<HttpClientDispatcher> {
-        self.hcm.get_client(self.ct).await
     }
 
     pub async fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {

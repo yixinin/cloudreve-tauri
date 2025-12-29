@@ -3,17 +3,14 @@ use std::str::FromStr;
 use http::Uri;
 use reqwest::Method;
 
-use crate::{
-    hc::http_client_manager::HttpClientWrapper,
-    proto::{
-        self,
-        file::DeleteFileAck,
-        settings::NetworkMode,
-        storage::{
-            BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
-            FileSrouce, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck, MoveReq,
-            RenameReq, UploadSessionAck, UploadSessionReq, Url,
-        },
+use crate::proto::{
+    self,
+    file::DeleteFileAck,
+    settings::NetworkMode,
+    storage::{
+        BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
+        FileSrouce, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck, MoveReq, RenameReq,
+        UploadSessionAck, UploadSessionReq, Url,
     },
 };
 
