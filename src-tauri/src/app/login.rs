@@ -32,8 +32,7 @@ impl super::AppState {
             password: pass.to_string(),
         };
         let req = self.request_with_body(Method::POST, "/session/token", request)?;
-        let resp = self.get_client().await?.post::<Ack<LoginAck>>(req).await?;
-        let ack = resp.into_data();
+        let ack = req.send().await?.json::<Ack<LoginAck>>().await?;
         if ack.code == 0 {
             if let Some(data) = ack.data {
                 if let Err(e) = self.set_token(data.token).await {

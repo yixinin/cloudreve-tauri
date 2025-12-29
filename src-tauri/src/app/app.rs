@@ -1,9 +1,13 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
+use super::httpclient::ConnType;
 use crate::proto::{
     login::Token,
     settings::{NetworkMode, NetworkSettings},
 };
+
+use reqwest::RequestBuilder;
+
 use anyhow::Result;
 use http::Method;
 use sled::Db;
@@ -11,9 +15,9 @@ use tauri::Manager;
 
 pub struct AppState {
     pub db: Arc<Db>,
-    pub hcm: HttpClientManager,
-    pub ct: hc::http_client_manager::ClientType,
+    pub conn_types: Vec<ConnType>,
     pub base_url: String,
+    pub client: Arc<reqwest::Client>,
 }
 
 impl AppState {
@@ -24,18 +28,24 @@ impl AppState {
 
         // 使用sled的默认配置，让sled自动处理数据库文件的创建和打开
         let db = sled::open(db_path)?;
+
         Ok(Self {
             db: Arc::new(db),
-            hcm: HttpClientManager::new(),
-            ct: hc::http_client_manager::ClientType::Reqwest,
+            conn_types: vec![ConnType::IrohH3, ConnType::QuicH3, ConnType::TCP],
             base_url: String::new(),
+            client: Arc::new(reqwest::Client::new()),
         })
     }
 
-    pub fn request(&self, method: Method, url: &str) -> Result<Request> {
+    pub fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
         self.request_with_body(method, url, ())
     }
-    pub fn request_with_query<T>(&self, method: Method, url: &str, query: T) -> Result<Request>
+    pub fn request_with_query<T>(
+        &self,
+        method: Method,
+        url: &str,
+        query: T,
+    ) -> Result<RequestBuilder>
     where
         T: serde::Serialize,
     {
@@ -45,7 +55,7 @@ impl AppState {
         )
     }
 
-    pub fn request_with_body<T>(&self, method: Method, url: &str, body: T) -> Result<Request>
+    pub fn request_with_body<T>(&self, method: Method, url: &str, body: T) -> Result<RequestBuilder>
     where
         T: serde::Serialize,
     {
@@ -55,14 +65,19 @@ impl AppState {
             .host()
             .unwrap_or_default()
             .to_string();
-        let mut req = Request::new(method, &self.base_url, url);
-        req = req.with_header("Host", &host);
+
+        let mut req = self
+            .client
+            .clone()
+            .request(method, path::join(&self.base_url, url));
+
         if let Ok(tokens) = self.get_token_sync() {
-            req = req.with_header("Authorization", &format!("Bearer {}", tokens.access_token));
-            eprintln!("token found: {:?}", tokens.access_token);
-        } else {
-            eprintln!("no token found");
+            req.header(
+                "Authorization",
+                format!("Bearer {}", tokens.access_token).parse()?,
+            );
         }
+
         Ok(req.json(body)?)
     }
 
@@ -98,29 +113,34 @@ impl AppState {
         };
         self.base_url = format!("{}/api/v4", full_http_addr);
         println!("init base url: {}", &self.base_url);
-
+        let host = self
+            .base_url
+            .parse::<http::Uri>()?
+            .host()
+            .unwrap_or_default()
+            .to_string();
         // 处理P2P模式下的Iroh端点
         if settings.mode == NetworkMode::P2P {
             // 优先使用专门的iroh_endpoint字段作为Iroh端点地址
-            let iroh_addr = if !settings.iroh_endpoint.is_empty() {
-                settings.iroh_endpoint.clone()
+            if settings.iroh_endpoint.is_empty() {
+                eprintln!("iroh endpoint is empty, skip init iroh client");
+                return Ok(());
             } else {
-                "iroh://p2p".to_string()
+                let ticket = settings.iroh_endpoint.clone();
+                let client = reqwest::Client::builder()
+                    .iroh3_endpoint_ticket(ticket)
+                    .default_headers({
+                        let mut headers = reqwest::header::HeaderMap::new();
+                        headers.insert(
+                            reqwest::header::USER_AGENT,
+                            "cloudreve/tauri+iroh".parse().unwrap(),
+                        );
+                        headers.insert("Host", host.parse()?);
+                        headers
+                    })
+                    .build()?;
+                self.client = Arc::new(client);
             };
-
-            // 检查是否是默认的P2P标记
-            if iroh_addr != "iroh://p2p" {
-                // 初始化Iroh端点 - 使用实际的端点地址（去掉iroh://前缀）
-                if let Ok(addr) = iroh_client::parse_subdomain(&iroh_addr) {
-                    self.hcm.init_iroh_endpoint(&iroh_addr).await?;
-                    println!("Iroh endpoint initialized with address: {:?}", addr);
-                } else {
-                    println!("Failed to parse Iroh endpoint address: {}", iroh_addr);
-                }
-            } else {
-                // 如果是默认的P2P标记，不初始化Iroh端点
-                println!("Using default P2P address marker, skipping Iroh endpoint initialization");
-            }
         }
 
         Ok(())
