@@ -67,7 +67,8 @@ impl AppState {
             .unwrap_or_default()
             .to_string();
 
-        let url = Url::parse(&self.base_url)?.join(url)?;
+        let url = Url::parse(&format!("{}{}", &self.base_url, url))?;
+        eprintln!("outgoing request :{} {}", &method, &url);
         let mut req = self.client.clone().request(method, url);
 
         if let Ok(tokens) = self.get_token_sync() {

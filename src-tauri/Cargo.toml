@@ -21,6 +21,7 @@ tauri-build = { version = "2.5", features = [] }
 reqwest = { path = "../../reqwest", default-features = false, features = [
     "json",
     "rustls-no-provider",
+    "iroh-h3",
 ] }
 tauri = { version = "2.9", features = [] }
 tauri-plugin-fs = "2.4"

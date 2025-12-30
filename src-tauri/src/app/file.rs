@@ -173,34 +173,11 @@ impl super::AppState {
     }
 
     pub async fn get_thumb_url(&self, uri: String) -> Result<String> {
-        let client = self.get_client().await?;
-        self.get_thumb_url_with_client(uri, client).await
-    }
-
-    pub async fn get_thumb_url_with_client(
-        &self,
-        uri: String,
-        client: Arc<reqwest::Client>,
-    ) -> Result<String> {
         let query = std::collections::HashMap::from([("uri", uri)]);
-        let base_url = Url::parse(&self.base_url)?;
-        let path_url = base_url.join("/file/thumb")?;
-        let url = format!("{}?{}", path_url, serde_urlencoded::to_string(query)?);
-        let mut req_builder = client.request(Method::GET, url);
-
-        if let Ok(tokens) = self.get_token_sync() {
-            req_builder = req_builder.header(
-                "Authorization",
-                format!("Bearer {}", tokens.access_token)
-                    .parse::<reqwest::header::HeaderValue>()?,
-            );
-        }
-
-        let resp = req_builder
-            .send()
-            .await?
-            .json::<proto::Ack<GetThumbURLAck>>()
-            .await?;
+        let req = self.request_with_query(Method::GET, "/file/thumb", query)?;
+        let resp = req.send().await?;
+        let text = resp.text().await?;
+        let resp: proto::Ack<GetThumbURLAck> = serde_json::from_str(&text)?;
         if resp.code == 0 {
             if let Some(data) = resp.data {
                 return Ok(data.url);

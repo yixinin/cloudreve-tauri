@@ -1,7 +1,7 @@
 use base64::{self, engine::general_purpose::STANDARD, Engine};
 use bytes::Bytes;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     path::{self},
 };
 use tauri::{AppHandle, Manager};
@@ -31,7 +31,7 @@ pub mod app;
 pub mod media;
 pub mod net;
 pub mod proto;
-pub mod transfer;
+// pub mod transfer;
 
 fn decode_btoa_encoded_uri(encoded_str: &str) -> anyhow::Result<String> {
     // 1. Base64解码
@@ -230,8 +230,8 @@ pub fn run() {
             get_file_source,
             pre_upload,
             pre_download,
-            upload,
-            download,
+            // upload,
+            // download,
             get_shares,
             delete_lock,
             restore_file,
@@ -429,8 +429,7 @@ async fn get_thumb_url(
 ) -> JsonResult<String> {
     let app = state.lock().await;
     // 使用Iroh客户端获取缩略图URL
-    let client = app.get_client().await?;
-    app.get_thumb_url_with_client(uri, client).await
+    app.get_thumb_url(uri).await
 }
 
 #[derive(Clone, Serialize)]
@@ -541,27 +540,27 @@ fn get_downloads_dir(app: &AppHandle) -> Result<String> {
     }
 }
 
-#[tauri::command]
-async fn download(
-    app: AppHandle,
-    id: u32,
-    url: String,
-    file_path: String,
-    headers: Option<HashMap<String, String>>,
-) -> JsonResult<u32> {
-    transfer::download(&app, id, &url, &file_path, headers).await
-}
+// #[tauri::command]
+// async fn download(
+//     app: AppHandle,
+//     id: u32,
+//     url: String,
+//     file_path: String,
+//     headers: Option<HashMap<String, String>>,
+// ) -> JsonResult<u32> {
+//     transfer::download(&app, id, &url, &file_path, headers).await
+// }
 
-#[tauri::command]
-async fn upload(
-    hd: AppHandle,
-    id: u32,
-    url: String,
-    file_path: String,
-    headers: Option<HashMap<String, String>>,
-) -> JsonResult<u32> {
-    transfer::upload(&hd, id, &url, &file_path, headers).await
-}
+// #[tauri::command]
+// async fn upload(
+//     hd: AppHandle,
+//     id: u32,
+//     url: String,
+//     file_path: String,
+//     headers: Option<HashMap<String, String>>,
+// ) -> JsonResult<u32> {
+//     transfer::upload(&hd, id, &url, &file_path, headers).await
+// }
 
 #[tauri::command]
 async fn pre_upload(
