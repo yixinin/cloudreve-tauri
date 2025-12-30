@@ -1,4 +1,3 @@
-use std::net::IpAddr;
 use std::sync::OnceLock;
 
 /// 缓存IPv6连接性检查结果，避免重复执行
@@ -15,17 +14,20 @@ pub fn has_ipv6_connectivity() -> bool {
             // 遍历所有接口和地址
             for iface in interfaces {
                 // 检查是否为IPv6地址
-                if let IpAddr::V6(ipv6_addr) = iface.address {
-                    // 跳过本地链路地址（fe80::/10）和环回地址（::1/128）
-                    if !ipv6_addr.is_loopback() && !ipv6_addr.is_unicast_link_local() {
-                        // 如果有可用的全局IPv6地址，返回true
-                        return true;
+                match iface.address {
+                    getifaddrs::Address::V6(sock_addr_v6) => {
+                        // 检查是否为全局IPv6地址
+                        let ipv6_addr = sock_addr_v6.address;
+                        if !ipv6_addr.is_loopback() && !ipv6_addr.is_unicast_link_local() {
+                            // 如果有可用的全局IPv6地址，返回true
+                            return true;
+                        }
                     }
+                    _ => {}
                 }
             }
         }
-
-        // 如果没有找到可用的IPv6地址，返回false
+        // 默认返回false
         false
     })
 }

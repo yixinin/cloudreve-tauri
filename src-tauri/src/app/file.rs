@@ -1,16 +1,14 @@
-use std::str::FromStr;
-
-use http::Uri;
 use reqwest::Method;
+use std::sync::Arc;
+use url::Url;
 
 use crate::proto::{
     self,
     file::DeleteFileAck,
-    settings::NetworkMode,
     storage::{
         BatchUrisReq, BatchUrlsAck, CreateFileReq, DeleteFileReq, FileDetailsInfo, FileInfo,
         FileSrouce, GetFileSourceReq, GetFilesAck, GetFilesReq, GetThumbURLAck, MoveReq, RenameReq,
-        UploadSessionAck, UploadSessionReq, Url,
+        UploadSessionAck, UploadSessionReq,
     },
 };
 
@@ -20,18 +18,17 @@ impl super::AppState {
     pub async fn get_file_source(&self, uris: Vec<String>) -> Result<FileSrouce> {
         let req = GetFileSourceReq { uris: uris };
         let req = self.request_with_query(Method::PUT, "/file/source", req)?;
-        let resp = self
-            .get_client()
+        let resp = req
+            .send()
             .await?
-            .put::<proto::Ack<Vec<FileSrouce>>>(req)
+            .json::<proto::Ack<Vec<FileSrouce>>>()
             .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            for v in ack.data.unwrap() {
+        if resp.code == 0 {
+            for v in resp.data.unwrap() {
                 return Ok(v);
             }
         }
-        return Err(proto::AppError::Message(ack.code, ack.msg));
+        return Err(proto::AppError::Message(resp.code, resp.msg));
     }
 
     pub async fn delete_lock(&self, tokens: Vec<String>) -> Result<bool> {
@@ -40,47 +37,32 @@ impl super::AppState {
             "/file/token",
             proto::file::DeleteTokenReq { tokens },
         )?;
-        let resp = self
-            .get_client()
-            .await?
-            .delete::<proto::Ack<String>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
             return Ok(true);
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
     pub async fn restore_file(&self, uris: Vec<String>) -> Result<bool> {
         let req = BatchUrisReq { uris };
         let req = self.request_with_body(Method::POST, "/file/restore", req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<proto::Ack<String>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
             return Ok(true);
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
     pub async fn get_files(&self, req: GetFilesReq) -> Result<GetFilesAck> {
         let req = self.request_with_query(Method::GET, "/file", req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .get::<proto::Ack<GetFilesAck>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<GetFilesAck>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -91,16 +73,11 @@ impl super::AppState {
             uris,
         };
         let req = self.request_with_body(Method::POST, "/file/move", req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<proto::Ack<String>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
             return Ok(true);
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -119,21 +96,20 @@ impl super::AppState {
                 uris,
             },
         )?;
-        let resp = self
-            .get_client()
+        let resp = req
+            .send()
             .await?
-            .delete::<proto::Ack<DeleteFileAck>>(req)
+            .json::<proto::Ack<DeleteFileAck>>()
             .await?;
-        let ack = resp.into_data();
-        match ack.code {
+        match resp.code {
             0 => {
                 return Ok(None);
             }
             40073 => {
-                return Ok(ack.data);
+                return Ok(resp.data);
             }
             _ => {
-                return Err(proto::AppError::Message(ack.code, ack.msg));
+                return Err(proto::AppError::Message(resp.code, resp.msg));
             }
         }
     }
@@ -144,16 +120,15 @@ impl super::AppState {
             uri: uri,
         };
         let req = self.request_with_body(Method::POST, "/file/rename", req)?;
-        let resp = self
-            .get_client()
+        let resp = req
+            .send()
             .await?
-            .post::<proto::Ack<FileDetailsInfo>>(req)
+            .json::<proto::Ack<FileDetailsInfo>>()
             .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
@@ -164,14 +139,28 @@ impl super::AppState {
     pub async fn batch_urls_with_client(
         &self,
         urls: Vec<String>,
-        client: crate::hc::http_client_manager::HttpClientDispatcher,
+        client: Arc<reqwest::Client>,
     ) -> Result<BatchUrlsAck> {
         let req: BatchUrisReq = BatchUrisReq { uris: urls };
-        let req = self.request_with_body(Method::POST, "/file/url", req)?;
-        let resp = client.post::<proto::Ack<BatchUrlsAck>>(req).await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            if let Some(data) = ack.data {
+        let url = Url::parse(&self.base_url)?.join("/file/url")?;
+        let mut req_builder = client.request(Method::POST, url);
+
+        if let Ok(tokens) = self.get_token_sync() {
+            req_builder = req_builder.header(
+                "Authorization",
+                format!("Bearer {}", tokens.access_token)
+                    .parse::<reqwest::header::HeaderValue>()?,
+            );
+        }
+
+        let resp = req_builder
+            .json(&req)
+            .send()
+            .await?
+            .json::<proto::Ack<BatchUrlsAck>>()
+            .await?;
+        if resp.code == 0 {
+            if let Some(data) = resp.data {
                 return Ok(data);
             }
             return Ok(BatchUrlsAck {
@@ -179,7 +168,7 @@ impl super::AppState {
                 urls: Vec::new(),
             });
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -191,23 +180,35 @@ impl super::AppState {
     pub async fn get_thumb_url_with_client(
         &self,
         uri: String,
-        client: crate::hc::http_client_manager::HttpClientDispatcher,
+        client: Arc<reqwest::Client>,
     ) -> Result<String> {
-        let req = self.request_with_query(
-            Method::GET,
-            "/file/thumb",
-            std::collections::HashMap::from([("uri", uri)]),
-        )?;
-        let resp = client.get::<proto::Ack<GetThumbURLAck>>(req).await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            if let Some(data) = ack.data {
+        let query = std::collections::HashMap::from([("uri", uri)]);
+        let base_url = Url::parse(&self.base_url)?;
+        let path_url = base_url.join("/file/thumb")?;
+        let url = format!("{}?{}", path_url, serde_urlencoded::to_string(query)?);
+        let mut req_builder = client.request(Method::GET, url);
+
+        if let Ok(tokens) = self.get_token_sync() {
+            req_builder = req_builder.header(
+                "Authorization",
+                format!("Bearer {}", tokens.access_token)
+                    .parse::<reqwest::header::HeaderValue>()?,
+            );
+        }
+
+        let resp = req_builder
+            .send()
+            .await?
+            .json::<proto::Ack<GetThumbURLAck>>()
+            .await?;
+        if resp.code == 0 {
+            if let Some(data) = resp.data {
                 return Ok(data.url);
             }
 
             return Ok(String::new());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -218,16 +219,11 @@ impl super::AppState {
             uri: uri.to_string(),
         };
         let req = self.request_with_body(Method::POST, "/file/create", req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<proto::Ack<FileInfo>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<FileInfo>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -240,16 +236,15 @@ impl super::AppState {
                 ("extended", "true".to_string()),
             ]),
         )?;
-        let resp = self
-            .get_client()
+        let resp = req
+            .send()
             .await?
-            .get::<proto::Ack<FileDetailsInfo>>(req)
+            .json::<proto::Ack<FileDetailsInfo>>()
             .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -273,15 +268,14 @@ impl super::AppState {
         };
 
         let req = self.request_with_body(Method::PUT, "/file/upload", req)?;
-        let response = self
-            .get_client()
+        let response = req
+            .send()
             .await?
-            .put::<proto::Ack<UploadSessionAck>>(req)
+            .json::<proto::Ack<UploadSessionAck>>()
             .await?;
-        let ack = response.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        if response.code == 0 {
+            return Ok(response.data.unwrap());
         }
-        return Err(proto::AppError::Message(ack.code, ack.msg));
+        return Err(proto::AppError::Message(response.code, response.msg));
     }
 }

@@ -1,16 +1,12 @@
-use crate::hc::http_client_manager::{ClientType, HttpClientWrapper};
-use crate::hc::Request;
 use base64::{self, engine::general_purpose::STANDARD, Engine};
 use bytes::Bytes;
-use http::{HeaderMap, Method, Version};
 use std::{
     collections::{HashMap, HashSet},
     path::{self},
 };
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
-use url::Url;
 use urlencoding;
 
 use crate::{
@@ -109,15 +105,8 @@ pub fn run() {
                 // 构建完整的请求URL
                 let request_url = format!("{}{}", base_url, path);
 
-                // 根据网络设置选择客户端类型
-                let client_type = if settings.mode == NetworkMode::P2P {
-                    ClientType::Iroh
-                } else {
-                    ClientType::Reqwest
-                };
-
                 // 获取客户端
-                let client = match app.hcm.get_client(client_type).await {
+                let client = match app.get_client().await {
                     Ok(client) => client,
                     Err(e) => {
                         eprintln!("Failed to get client: {}", e);
@@ -131,15 +120,24 @@ pub fn run() {
                 let method = request.method();
 
                 // 构建请求对象
-                let mut req = Request::new(method.to_owned(), &request_url, "");
-                req = req.with_headers(request.headers().clone());
-                req = req.with_body(Bytes::copy_from_slice(request.body()));
+                let mut req_builder = client.request(method.clone(), &request_url);
+                req_builder = req_builder.headers(request.headers().clone());
+                req_builder = req_builder.body(Bytes::copy_from_slice(request.body()));
                 // 发送请求并获取响应
-                match client.get_bytes(req).await {
+                match req_builder.send().await {
                     Ok(response) => {
                         let status = response.status();
                         let headers = response.headers().clone();
-                        let data = response.into_data().to_vec();
+                        let data = match response.bytes().await {
+                            Ok(bytes) => bytes.to_vec(),
+                            Err(e) => {
+                                eprintln!("Failed to read response bytes: {}", e);
+                                return http::Response::builder()
+                                    .status(500)
+                                    .body(Vec::new())
+                                    .unwrap();
+                            }
+                        };
 
                         // 构建响应
                         let mut http_response_builder = http::Response::builder().status(status);
@@ -195,17 +193,7 @@ pub fn run() {
                     eprintln!("Error initializing base URL: {:?}", e);
                 }
                 // app_state.init_base_url(&settings).await?;
-                if settings.mode == NetworkMode::P2P {
-                    // 只有当有实际的Iroh端点地址时，才使用Iroh客户端
-                    if settings.get_addr() != "iroh://p2p" {
-                        app_state.ct = ClientType::Iroh;
-                        println!("Using Iroh client for P2P mode");
-                    } else {
-                        // 如果是默认的P2P标记，使用Reqwest客户端
-                        app_state.ct = ClientType::Reqwest;
-                        println!("Using Reqwest client for default P2P mode");
-                    }
-                }
+
                 app.manage(Mutex::new(app_state));
 
                 #[cfg(dev)]
@@ -294,23 +282,6 @@ async fn set_network_settings(
 
     // 初始化基础URL
     app.init_base_url(&settings).await?;
-
-    // 根据网络模式设置客户端类型
-    match settings.mode {
-        NetworkMode::P2P => {
-            // 只有当addr不是默认的"iroh://p2p"时，才使用Iroh客户端
-            // 这样可以确保只有在提供了实际的Iroh端点地址时才使用P2P模式
-            if addr != "iroh://p2p" {
-                app.ct = hc::http_client_manager::ClientType::Iroh;
-            } else {
-                // 如果是默认地址，回退到Reqwest客户端
-                app.ct = hc::http_client_manager::ClientType::Reqwest;
-            }
-        }
-        _ => {
-            app.ct = hc::http_client_manager::ClientType::Reqwest;
-        }
-    }
 
     return Ok(settings);
 }
@@ -438,10 +409,7 @@ async fn search_files(
 async fn get_url(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonResult<String> {
     let app = state.lock().await;
     // 确保始终使用Iroh客户端获取URL
-    let client = app
-        .hcm
-        .get_client(hc::http_client_manager::ClientType::Iroh)
-        .await?;
+    let client = app.get_client().await?;
     let ack = app.batch_urls_with_client(vec![uri.clone()], client).await;
     match ack {
         Ok(ack) => {
@@ -461,10 +429,7 @@ async fn get_thumb_url(
 ) -> JsonResult<String> {
     let app = state.lock().await;
     // 使用Iroh客户端获取缩略图URL
-    let client = app
-        .hcm
-        .get_client(hc::http_client_manager::ClientType::Iroh)
-        .await?;
+    let client = app.get_client().await?;
     app.get_thumb_url_with_client(uri, client).await
 }
 
@@ -791,21 +756,15 @@ async fn trigger_sync() -> JsonResult<()> {
 async fn proxy_image(state: tauri::State<'_, Mutex<AppState>>, url: String) -> JsonResult<Vec<u8>> {
     let app = state.lock().await;
     // 使用Reqwest客户端获取图片数据
-    let client = app
-        .hcm
-        .get_client(hc::http_client_manager::ClientType::Reqwest)
-        .await?;
-
-    // 创建请求
-    let mut headers = HeaderMap::new();
-    headers.insert("User-Agent", "Cloudreve-Tauri/1.0".parse().unwrap());
-
-    // 使用 Request::new 方法创建请求对象，将完整URL作为base_url，path设为空
-    let req = Request::new(Method::GET, &url, "").with_header("User-Agent", "Cloudreve-Tauri/1.0");
+    let client = app.get_client().await?;
 
     // 发送请求并获取响应
-    let resp = client.get_bytes(req).await?;
-    let data = resp.into_data();
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "Cloudreve-Tauri/1.0")
+        .send()
+        .await?;
+    let data = resp.bytes().await?;
 
     Ok(data.to_vec())
 }

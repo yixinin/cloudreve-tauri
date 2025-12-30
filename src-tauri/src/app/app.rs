@@ -1,4 +1,5 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
+use url::Url;
 
 use super::httpclient::ConnType;
 use crate::proto::{
@@ -59,26 +60,25 @@ impl AppState {
     where
         T: serde::Serialize,
     {
-        let host = self
+        let _host = self
             .base_url
             .parse::<http::Uri>()?
             .host()
             .unwrap_or_default()
             .to_string();
 
-        let mut req = self
-            .client
-            .clone()
-            .request(method, path::join(&self.base_url, url));
+        let url = Url::parse(&self.base_url)?.join(url)?;
+        let mut req = self.client.clone().request(method, url);
 
         if let Ok(tokens) = self.get_token_sync() {
-            req.header(
+            req = req.header(
                 "Authorization",
-                format!("Bearer {}", tokens.access_token).parse()?,
+                format!("Bearer {}", tokens.access_token)
+                    .parse::<reqwest::header::HeaderValue>()?,
             );
         }
 
-        Ok(req.json(body)?)
+        Ok(req.json(&body))
     }
 
     pub async fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {
@@ -126,14 +126,12 @@ impl AppState {
                 eprintln!("iroh endpoint is empty, skip init iroh client");
                 return Ok(());
             } else {
-                let ticket = settings.iroh_endpoint.clone();
                 let client = reqwest::Client::builder()
-                    .iroh3_endpoint_ticket(ticket)
                     .default_headers({
                         let mut headers = reqwest::header::HeaderMap::new();
                         headers.insert(
                             reqwest::header::USER_AGENT,
-                            "cloudreve/tauri+iroh".parse().unwrap(),
+                            "cloudreve/tauri".parse().unwrap(),
                         );
                         headers.insert("Host", host.parse()?);
                         headers
@@ -307,5 +305,9 @@ impl AppState {
             Ok(())
         })
         .await?
+    }
+
+    pub async fn get_client(&self) -> Result<Arc<reqwest::Client>> {
+        Ok(self.client.clone())
     }
 }

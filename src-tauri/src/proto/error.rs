@@ -40,6 +40,12 @@ impl From<reqwest::Error> for AppError {
     }
 }
 
+impl From<url::ParseError> for AppError {
+    fn from(err: url::ParseError) -> Self {
+        AppError::Anyhow(anyhow::anyhow!("URL parse error: {}", err))
+    }
+}
+
 impl From<serde_json::Error> for AppError {
     fn from(err: serde_json::Error) -> Self {
         AppError::Serde(err.into())

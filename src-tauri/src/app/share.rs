@@ -1,10 +1,8 @@
-use crate::hc::http_client_manager::HttpClientWrapper;
-use crate::hc::Request;
 use http::Method;
 
 use crate::proto::{
     self,
-    share::{GetSharesAck, GetSharesReq, ShareInfo},
+    share::{GetSharesAck, ShareInfo},
     storage::ShareReq,
 };
 
@@ -34,16 +32,11 @@ impl super::AppState {
             req.expire = Some(expire);
         }
         let req = self.request_with_body(Method::PUT, "/share", req)?;
-        let response = self
-            .get_client()
-            .await?
-            .put::<proto::Ack<String>>(req)
-            .await?;
-        let ack = response.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -56,31 +49,21 @@ impl super::AppState {
                 .cloned()
                 .collect::<std::collections::HashMap<_, _>>(),
         )?;
-        let resp = self
-            .get_client()
-            .await?
-            .get::<proto::Ack<GetSharesAck>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<GetSharesAck>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
     pub async fn delete_share(&self, id: &str) -> Result<bool> {
         let req = self.request(Method::DELETE, &format!("/share/{}", id))?;
-        let resp = self
-            .get_client()
-            .await?
-            .delete::<proto::Ack<String>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
             return Ok(true);
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -104,16 +87,11 @@ impl super::AppState {
             req.expire = Some(expire)
         }
         let req = self.request_with_body(Method::POST, &format!("/share/{}", id), req)?;
-        let resp = self
-            .get_client()
-            .await?
-            .post::<proto::Ack<String>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<String>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 
@@ -126,16 +104,11 @@ impl super::AppState {
                 .cloned()
                 .collect::<std::collections::HashMap<_, _>>(),
         )?;
-        let resp = self
-            .get_client()
-            .await?
-            .get::<proto::Ack<ShareInfo>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<proto::Ack<ShareInfo>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(proto::AppError::Message(ack.code, ack.msg));
+            return Err(proto::AppError::Message(resp.code, resp.msg));
         }
     }
 }

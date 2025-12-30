@@ -1,5 +1,3 @@
-use crate::hc::http_client_manager::HttpClientWrapper;
-use crate::hc::Request;
 use http::{Method, Version};
 
 use crate::proto::{
@@ -18,13 +16,12 @@ impl super::AppState {
             "/session/prepare",
             std::collections::HashMap::from([("email", email.to_string())]),
         )?;
-        let resp = self.get_client().await?.get::<Ack<PrepareAck>>(req).await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<Ack<PrepareAck>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         }
 
-        Err(AppError::Message(ack.code, ack.msg))
+        Err(AppError::Message(resp.code, resp.msg))
     }
     pub async fn login(&self, email: &str, pass: &str) -> Result<User> {
         let request = LoginReq {
@@ -61,27 +58,21 @@ impl super::AppState {
         };
 
         let req = self.request_with_body(Method::POST, "/session/token/refresh", request)?;
-        let resp = self.get_client().await?.post::<Ack<Token>>(req).await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<Ack<Token>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         }
 
-        Err(AppError::Message(ack.code, ack.msg))
+        Err(AppError::Message(resp.code, resp.msg))
     }
 
     pub async fn get_capacity(&self) -> Result<GetCapacityAck> {
         let req = self.request(Method::GET, "/user/capacity")?;
-        let resp = self
-            .get_client()
-            .await?
-            .get::<Ack<GetCapacityAck>>(req)
-            .await?;
-        let ack = resp.into_data();
-        if ack.code == 0 {
-            return Ok(ack.data.unwrap());
+        let resp = req.send().await?.json::<Ack<GetCapacityAck>>().await?;
+        if resp.code == 0 {
+            return Ok(resp.data.unwrap());
         } else {
-            return Err(AppError::Message(ack.code, ack.msg));
+            return Err(AppError::Message(resp.code, resp.msg));
         }
     }
 }
