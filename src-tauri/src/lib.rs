@@ -1,5 +1,3 @@
-use base64::{self, engine::general_purpose::STANDARD, Engine};
-use bytes::Bytes;
 use std::{
     collections::HashSet,
     path::{self},
@@ -7,7 +5,6 @@ use std::{
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::Mutex;
-use urlencoding;
 
 use crate::{
     app::AppState,
@@ -28,23 +25,12 @@ use proto::{
 use serde::Serialize;
 
 pub mod app;
+pub mod iroh;
 pub mod media;
 pub mod net;
 pub mod proto;
 // pub mod transfer;
 
-fn decode_btoa_encoded_uri(encoded_str: &str) -> anyhow::Result<String> {
-    // 1. Base64解码
-    let decoded_bytes = STANDARD.decode(encoded_str.trim())?; // trim() 用于去除可能的空白字符
-
-    // 2. 将解码后的字节转换为字符串。这步得到的是百分号编码的URL。
-    let percent_encoded_url = String::from_utf8(decoded_bytes)?;
-
-    // 3. URL解码（百分号解码）
-    let final_url = urlencoding::decode(&percent_encoded_url)?.into_owned();
-
-    Ok(final_url)
-}
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -53,136 +39,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .register_uri_scheme_protocol("iroh", |app_context, request| {
-            let app_handle = app_context.app_handle();
-            let uri = request.uri().to_string();
-            let uri = uri.trim_start_matches("iroh://localhost/");
-
-            // 使用block_on来执行异步操作
-            tauri::async_runtime::block_on(async move {
-                // 获取应用状态
-                let state = app_handle.state::<Mutex<AppState>>();
-                let app = state.lock().await;
-
-                // 解码URI
-                let decoded_uri = match decode_btoa_encoded_uri(&uri) {
-                    Ok(decoded) => decoded.to_string(),
-                    Err(e) => {
-                        eprintln!("Failed to decode URI: {}", e);
-                        return http::Response::builder()
-                            .status(400)
-                            .body(Vec::new())
-                            .unwrap();
-                    }
-                };
-
-                // 解析URI以获取路径和参数
-                let parsed_uri = match url::Url::parse(&decoded_uri) {
-                    Ok(uri) => uri,
-                    Err(e) => {
-                        eprintln!("Failed to parse URI: {}", e);
-                        return http::Response::builder()
-                            .status(400)
-                            .body(Vec::new())
-                            .unwrap();
-                    }
-                };
-                let path = parsed_uri.path();
-
-                // 获取网络设置和基础URL
-                let settings = match app.get_network_settings() {
-                    Ok(settings) => settings,
-                    Err(e) => {
-                        eprintln!("Failed to get network settings: {}", e);
-                        return http::Response::builder()
-                            .status(500)
-                            .body(Vec::new())
-                            .unwrap();
-                    }
-                };
-                let base_url = settings.get_addr();
-
-                // 构建完整的请求URL
-                let request_url = format!("{}{}", base_url, path);
-
-                // 获取客户端
-                let client = match app.get_client().await {
-                    Ok(client) => client,
-                    Err(e) => {
-                        eprintln!("Failed to get client: {}", e);
-                        return http::Response::builder()
-                            .status(500)
-                            .body(Vec::new())
-                            .unwrap();
-                    }
-                };
-
-                let method = request.method();
-
-                // 构建请求对象
-                let mut req_builder = client.request(method.clone(), &request_url);
-                req_builder = req_builder.headers(request.headers().clone());
-                req_builder = req_builder.body(Bytes::copy_from_slice(request.body()));
-                // 发送请求并获取响应
-                match req_builder.send().await {
-                    Ok(response) => {
-                        let status = response.status();
-                        let headers = response.headers().clone();
-                        let data = match response.bytes().await {
-                            Ok(bytes) => bytes.to_vec(),
-                            Err(e) => {
-                                eprintln!("Failed to read response bytes: {}", e);
-                                return http::Response::builder()
-                                    .status(500)
-                                    .body(Vec::new())
-                                    .unwrap();
-                            }
-                        };
-
-                        // 构建响应
-                        let mut http_response_builder = http::Response::builder().status(status);
-
-                        for (key, value) in headers {
-                            eprintln!("h3 response header: {:?} {:?}", key, value);
-                            if let Some(key) = key {
-                                http_response_builder =
-                                    http_response_builder.header(key, value.to_owned());
-                            }
-                        }
-
-                        // 如果是成功响应，设置Content-Type
-                        if status.is_success() {
-                            http_response_builder = http_response_builder
-                                .header("Content-Type", "application/octet-stream");
-                            http_response_builder = http_response_builder.header("Content-Length", data.len().to_string());
-                        }
-
-                        // 返回响应
-                        if let Ok(resp) = http_response_builder.body(data) {
-                            eprintln!("outgoing iroh response, method: {:?}, url: {:?}, status: {:?}, body size:{}", 
-                                &method,
-                                &request_url,
-                                resp.status(),
-                                resp.body().len()
-                            );
-                          return resp;
-                        } else {
-                            return http::Response::builder()
-                                .status(status)
-                                .body(Vec::new())
-                                .unwrap();
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Request failed: {}", e);
-                        http::Response::builder()
-                            .status(500)
-                            .body(Vec::new())
-                            .unwrap()
-                    }
-                }
-            })
-        })
+        .register_uri_scheme_protocol("iroh", iroh::handle_iroh_protocol)
         .setup(|app| {
             let app_handle = app.handle();
             let mut app_state = app::AppState::new(&app_handle)?;

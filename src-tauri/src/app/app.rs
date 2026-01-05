@@ -60,14 +60,15 @@ impl AppState {
     where
         T: serde::Serialize,
     {
-        let _host = self
-            .base_url
-            .parse::<http::Uri>()?
-            .host()
-            .unwrap_or_default()
-            .to_string();
-
-        let url = Url::parse(&format!("{}{}", &self.base_url, url))?;
+        let url = if url.starts_with("/api/v4") {
+            Url::parse(&format!(
+                "{}{}",
+                &self.base_url,
+                url.trim_start_matches("/api/v4")
+            ))?
+        } else {
+            Url::parse(&format!("{}{}", &self.base_url, url))?
+        };
         eprintln!("outgoing request :{} {}", &method, &url);
         let mut req = self.client.clone().request(method, url);
 
