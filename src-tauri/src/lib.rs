@@ -39,16 +39,21 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .register_uri_scheme_protocol("iroh", iroh::handle_iroh_protocol)
+        .register_asynchronous_uri_scheme_protocol(
+            "iroh",
+            move |app_context, request, responder| {
+                tauri::async_runtime::block_on(async move {
+                    iroh::handle_iroh_protocol_async(app_context, request, responder).await;
+                });
+            },
+        )
         .setup(|app| {
             let app_handle = app.handle();
             let mut app_state = app::AppState::new(&app_handle)?;
 
             let settings = app_state.get_network_settings()?;
             tauri::async_runtime::block_on(async move {
-                if let Err(e) = app_state.init_base_url(&settings).await {
-                    eprintln!("Error initializing base URL: {:?}", e);
-                }
+                app_state.init_base_url(&settings).await.unwrap_or(());
                 // app_state.init_base_url(&settings).await?;
 
                 app.manage(Mutex::new(app_state));
@@ -146,9 +151,7 @@ async fn set_network_settings(
 async fn get_network_settings(
     state: tauri::State<'_, Mutex<AppState>>,
 ) -> JsonResult<NetworkSettings> {
-    eprintln!("get_network_settings watting lock");
     let app = state.lock().await;
-    eprintln!("get_network_settings get lock");
     let settings = app.get_network_settings()?;
     return Ok(settings);
 }
@@ -265,9 +268,8 @@ async fn search_files(
 #[tauri::command]
 async fn get_url(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonResult<String> {
     let app = state.lock().await;
-    // 确保始终使用Iroh客户端获取URL
-    let client = app.get_client().await?;
-    let ack = app.batch_urls_with_client(vec![uri.clone()], client).await;
+
+    let ack = app.batch_urls(vec![uri.clone()]).await;
     match ack {
         Ok(ack) => {
             for v in ack.urls {
@@ -446,10 +448,6 @@ async fn pre_upload(
     let app = state.lock().await;
     let id = app.gen_id().await?;
 
-    println!(
-        "  dir:{}, policy_id:{}, filename:{}, mime:{}",
-        target_path, policy_id, filename, &mime_type
-    );
     let ack = app
         .upload_file_session(&mime_type, &uri, size, &policy_id)
         .await?;

@@ -132,33 +132,10 @@ impl super::AppState {
         }
     }
     pub async fn batch_urls(&self, urls: Vec<String>) -> Result<BatchUrlsAck> {
-        let client = self.get_client().await?;
-        self.batch_urls_with_client(urls, client).await
-    }
-
-    pub async fn batch_urls_with_client(
-        &self,
-        urls: Vec<String>,
-        client: Arc<reqwest::Client>,
-    ) -> Result<BatchUrlsAck> {
-        let req: BatchUrisReq = BatchUrisReq { uris: urls };
-        let url = Url::parse(&self.base_url)?.join("/file/url")?;
-        let mut req_builder = client.request(Method::POST, url);
-
-        if let Ok(tokens) = self.get_token_sync() {
-            req_builder = req_builder.header(
-                "Authorization",
-                format!("Bearer {}", tokens.access_token)
-                    .parse::<reqwest::header::HeaderValue>()?,
-            );
-        }
-
-        let resp = req_builder
-            .json(&req)
-            .send()
-            .await?
-            .json::<proto::Ack<BatchUrlsAck>>()
-            .await?;
+        let req = BatchUrisReq { uris: urls };
+        let req_builder = self.request(Method::POST, "/file/url")?;
+        let text = req_builder.json(&req).send().await?.text().await?;
+        let resp: proto::Ack<BatchUrlsAck> = serde_json::from_str(&text)?;
         if resp.code == 0 {
             if let Some(data) = resp.data {
                 return Ok(data);

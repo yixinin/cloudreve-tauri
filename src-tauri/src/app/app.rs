@@ -69,7 +69,6 @@ impl AppState {
         } else {
             Url::parse(&format!("{}{}", &self.base_url, url))?
         };
-        eprintln!("outgoing request :{} {}", &method, &url);
         let mut req = self.client.clone().request(method, url);
 
         if let Ok(tokens) = self.get_token_sync() {
@@ -84,7 +83,6 @@ impl AppState {
     }
 
     pub async fn init_base_url(&mut self, settings: &NetworkSettings) -> Result<()> {
-        eprintln!("init base url: {:?}", settings);
         // 决定HTTP地址：根据mode和网络连通性选择IPv6或IPv4
         let http_addr = if !settings.addr6.is_empty() {
             match settings.mode {
@@ -114,7 +112,6 @@ impl AppState {
             format!("https://{}", http_addr)
         };
         self.base_url = format!("{}/api/v4", full_http_addr);
-        println!("init base url: {}", &self.base_url);
         let host = self
             .base_url
             .parse::<http::Uri>()?
@@ -125,7 +122,6 @@ impl AppState {
         if settings.mode == NetworkMode::P2P {
             // 优先使用专门的iroh_endpoint字段作为Iroh端点地址
             if settings.iroh_endpoint.is_empty() {
-                eprintln!("iroh endpoint is empty, skip init iroh client");
                 return Ok(());
             } else {
                 let client = reqwest::Client::builder()
@@ -203,7 +199,6 @@ impl AppState {
         self.get_token_sync()
     }
     pub async fn set_token(&self, token: Token) -> Result<()> {
-        eprintln!("set token: {:?}", token);
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
             db.insert("access_token", token.access_token.as_bytes())?;
