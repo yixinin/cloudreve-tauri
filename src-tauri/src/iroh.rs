@@ -1,9 +1,7 @@
 use crate::app::AppState;
 use base64::{self, engine::general_purpose::STANDARD, Engine};
-use bytes::{Bytes, BytesMut};
-use futures::{ready, Stream};
+use bytes::Bytes;
 use http_body::{Body, Frame};
-use http_body_util::BodyExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tauri::{Manager, UriSchemeResponder};
@@ -250,4 +248,29 @@ fn decode_btoa_encoded_uri(encoded_str: &str) -> anyhow::Result<String> {
     let final_url = urlencoding::decode(&percent_encoded_url)?.into_owned();
 
     Ok(final_url)
+}
+
+fn encode_btoa_encoded_uri(uri: &str) -> String {
+    // 1. URL编码（百分号编码）
+    let percent_encoded_url = urlencoding::encode(uri);
+
+    // 2. 将编码后的字符串转换为字节数组
+    let percent_encoded_bytes = percent_encoded_url.as_bytes().to_vec();
+
+    // 3. Base64编码
+    let base64_encoded = STANDARD.encode(percent_encoded_bytes);
+
+    base64_encoded
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux"))]
+pub fn encode_iroh_protocol(uri: &str) -> String {
+    let encoded = encode_btoa_encoded_uri(uri);
+    format!("iroh://localhost/{}", encoded)
+}
+
+#[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "windows"))]
+pub fn encode_iroh_protocol(uri: &str) -> String {
+    let encoded = encode_btoa_encoded_uri(uri);
+    format!("http://iroh.localhost/{}", encoded)
 }

@@ -273,7 +273,7 @@ async fn get_url(state: tauri::State<'_, Mutex<AppState>>, uri: String) -> JsonR
     match ack {
         Ok(ack) => {
             for v in ack.urls {
-                return Ok(v.url);
+                return Ok(iroh::encode_iroh_protocol(&v.url));
             }
             return Err(AppError::NoData);
         }
@@ -288,7 +288,8 @@ async fn get_thumb_url(
 ) -> JsonResult<String> {
     let app = state.lock().await;
     // 使用Iroh客户端获取缩略图URL
-    app.get_thumb_url(uri).await
+    let thumb_url = app.get_thumb_url(uri).await?;
+    Ok(iroh::encode_iroh_protocol(&thumb_url))
 }
 
 #[derive(Clone, Serialize)]
