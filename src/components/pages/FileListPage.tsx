@@ -266,12 +266,10 @@ const FileListPage: React.FC = () => {
                     await Promise.all(
                         filesToLoad.map(async (file) => {
                             try {
-                                const thumbnailUrl = await getThumbURL(file.path);
-                                console.log(file.id, thumbnailUrl);
-
+                                const originalUrl = await getThumbURL(file.path);
                                 setFiles(prevFiles =>
                                     prevFiles.map(f =>
-                                        f.id === file.id ? { ...f, thumbnailUrl } : f
+                                        f.id === file.id ? { ...f, thumbnailUrl: originalUrl } : f
                                     )
                                 );
                             } catch (error) {
@@ -348,9 +346,7 @@ const FileListPage: React.FC = () => {
         }
     };
 
-    const handleImagePreview = (url: string, name: string) => {
-        console.log("set image url", url, name);
-
+    const handleImagePreview = async (url: string, name: string) => {
         setPreviewImage({
             open: true,
             url,
@@ -664,7 +660,12 @@ const FileListPage: React.FC = () => {
                 <ImagePreview
                     open={previewImage.open}
                     imageId={previewImage.url}
-                    fetchImage={getURL}
+                    fetchImage={async (uri: string) => {
+                        const imageUrl = await getURL(uri);
+                        const encodedUrl = btoa(encodeURIComponent(imageUrl));
+                        const irohUrl = `iroh.${encodedUrl}`;
+                        return irohUrl
+                    }}
                     onClose={handleClosePreview}
                     sx={{
                         maxWidth: { xs: '100vw', sm: '80vw' },
@@ -744,5 +745,3 @@ const FileListPage: React.FC = () => {
     );
 };
 export default FileListPage;
-
-

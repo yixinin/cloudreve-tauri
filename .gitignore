@@ -29,3 +29,4 @@ dist-ssr
 # Ignore Gradle build output directory
 build
 *.jks
+src-tauri/app.db

@@ -35,9 +35,9 @@ export interface PrepareAck {
     password_enabled: boolean;
 }
 
-export const userLogin = async (addr: string, ipv6: boolean, addr6: string, username: string, password: string): Promise<LoginAck> => {
+export const userLogin = async (username: string, password: string): Promise<User> => {
     try {
-        const ack = await invoke<LoginAck>('login', { addr, ipv6, addr6, username, password });
+        const ack = await invoke<User>('login', { username, password });
         return ack;
     } catch (error) {
         console.error('login error:', error);
@@ -65,36 +65,52 @@ export const userLogout = async (): Promise<boolean> => {
     }
 }
 
-export interface UserSessting {
-    force_ipv4: boolean,
-    force_ipv6: boolean,
-}
-
-
 export interface LoginData {
-    addr: string,
-    ipv6: boolean,
-    addr6: string,
     username: string,
     password: string,
 }
 
-export const getUserSetting = async (): Promise<UserSessting> => {
+export interface NetworkSettings {
+    addr: string,
+    addr6: string,
+    iroh_endpoint: string,
+    mode: NetworkMode,
+}
+
+export enum NetworkMode {
+    Auto = 1,
+    Normal = 2,
+    IPv6 = 3,
+    P2P = 4,
+}
+
+export const getNetworkSetting = async (): Promise<NetworkSettings> => {
     try {
-        const ack = await invoke<UserSessting>('get_user_setting', {});
+        const ack = await invoke<NetworkSettings>('get_network_settings', {});
         return ack;
     } catch (error) {
-        console.error('get user setting error:', error);
+        console.error('get network setting error:', error);
         throw error;
     }
 }
 
-export const saveUserSetting = async (forceIpv6: boolean, forceIpv4: boolean): Promise<boolean> => {
+export const setNetworkSettings = async (addr: string, addr6: string, irohEndpoint: string, mode: NetworkMode): Promise<boolean> => {
     try {
-        const ack = await invoke<boolean>('save_user_setting', { forceIpv6, forceIpv4 });
+        const ack = await invoke<boolean>('set_network_settings', { addr, addr6, irohEndpoint: irohEndpoint, mode });
         return ack;
     } catch (error) {
-        console.error('save user setting error:', error);
+        console.error('save network setting error:', error);
+        throw error;
+    }
+}
+
+
+export const setNetworkSettingsMode = async (mode: NetworkMode): Promise<boolean> => {
+    try {
+        const ack = await invoke<boolean>('set_network_settings', { mode });
+        return ack;
+    } catch (error) {
+        console.error('save network mode error:', error);
         throw error;
     }
 }

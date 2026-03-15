@@ -18,6 +18,7 @@ import {
     VolumeUp as VolumeUpIcon,
     VolumeOff as VolumeOffIcon,
     Fullscreen as FullscreenIcon,
+    FullscreenExit as FullscreenExitIcon,
     Replay as ReplayIcon,
     ArrowBack as BackIcon
 } from '@mui/icons-material';
@@ -45,6 +46,7 @@ const VideoPlayerPage: React.FC = () => {
     const [showControls, setShowControls] = useState(true);
     const [controlsTimeout, setControlsTimeout] = useState<number>();
     const [isLoading, setIsLoading] = useState(true);
+    const [isFullscreen] = useState(false);
     const debounceTimerRef = useRef<number | null>(null);
 
     // 自定义防抖函数
@@ -80,7 +82,6 @@ const VideoPlayerPage: React.FC = () => {
             try {
                 if (uri) {
                     const videoUrl = await getURL(uri);
-                    console.log("fetch video url: ", videoUrl);
                     setFileUrl(videoUrl);
                 }
             }
@@ -92,7 +93,7 @@ const VideoPlayerPage: React.FC = () => {
         }
 
         loadVideoUrl()
-    }, [fileUrl]);
+    }, [uri]);
 
     onBackKeyDown(() => {
         navigate(-1)
@@ -443,7 +444,7 @@ const VideoPlayerPage: React.FC = () => {
 
                                 {/* 全屏按钮 */}
                                 <IconButton onClick={toggleFullscreen} color="inherit">
-                                    <FullscreenIcon fontSize="medium" />
+                                    {isFullscreen ? <FullscreenExitIcon fontSize="medium" /> : <FullscreenIcon fontSize="medium" />}
                                 </IconButton>
                             </Box>
                         </Box>

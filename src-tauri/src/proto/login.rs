@@ -6,7 +6,7 @@ pub struct PrepareAck {
     pub password_enabled: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LoginReq {
     pub email: String,
     pub password: String,

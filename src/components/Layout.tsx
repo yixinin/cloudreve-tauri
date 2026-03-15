@@ -8,7 +8,7 @@ import {
 import UserMenu from './menus/userMenu';
 import AddMenu from './menus/addMenu';
 import SideMenu from './menus/sideMenu';
-import { Box, FormControl, IconButton, MenuItem, Select, SelectChangeEvent } from '@mui/material';
+import { Box, FormControl, IconButton, MenuItem, Select } from '@mui/material';
 import { AppBarProvider, useAppBar } from './contexts/AppBarContext';
 import FileNameDialog, { FileOp } from './pops/FileNameDialog';
 import { createFolder } from '../services/fileService';
@@ -16,7 +16,7 @@ import SearchBox from './pops/SearchBox';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
 import { useNotification } from './contexts/NotificationProvider';
-import { saveUserSetting } from '../services/userService';
+import { NetworkMode, setNetworkSettingsMode } from '../services/userService';
 
 interface ProgressPayload {
     id: number,
@@ -87,7 +87,7 @@ const LayoutWraper: React.FC = () => {
             }
         };
     }, [])
-    const { filePageProps, setSearchProps, siteAddrs, siteAddr, setSiteAddr } = useAppBar();
+    const { filePageProps, setSearchProps, siteAddrs, networkMode, setNetworkMode } = useAppBar();
     const [isNewFolerOpen, setIsNewFolerOpen] = useState(false);
     const [isSerchBoxOpen, setIsSerchBoxOpen] = useState(false);
 
@@ -123,16 +123,9 @@ const LayoutWraper: React.FC = () => {
     const handleSearch = (name: string) => {
         setSearchProps({ name: name })
     }
-    const handleSiteAddrChange = async (event: SelectChangeEvent) => {
-        const kind = event.target.value as string
-        console.log(kind, siteAddrs);
-        const selected = siteAddrs.find(item => item.kind === kind);
-        if (selected) {
-
-
-            setSiteAddr(selected.kind);
-            await saveUserSetting(selected.kind === 'ipv6', selected.kind === 'ipv4');
-        }
+    const handleNetworkModeChange = async (mode: NetworkMode) => {
+        setNetworkMode(mode);
+        await setNetworkSettingsMode(mode)
     }
 
     return (
@@ -165,8 +158,10 @@ const LayoutWraper: React.FC = () => {
                     <FormControl fullWidth>
                         <Select
                             id="demo-simple-select"
-                            value={siteAddr}
-                            onChange={handleSiteAddrChange}
+                            value={networkMode}
+                            onChange={(e) => {
+                                handleNetworkModeChange(e.target.value)
+                            }}
                             size='small'
                             sx={{
                                 border: 0,
@@ -174,7 +169,7 @@ const LayoutWraper: React.FC = () => {
                             }}
                         >
                             {siteAddrs.map(item => (
-                                <MenuItem value={item.kind}>{item.addr}</MenuItem>
+                                <MenuItem value={item.mode}>{item.addr}</MenuItem>
                             ))}
                         </Select>
                     </FormControl>

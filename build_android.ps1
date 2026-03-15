@@ -1,1 +1,1 @@
-yarn tauri android build --apk --target aarch64
+yarn tauri android build --apk true --target aarch64

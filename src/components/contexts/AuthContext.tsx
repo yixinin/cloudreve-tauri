@@ -1,6 +1,6 @@
 // src/contexts/AuthContext.tsx
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { LoginAck, User, userLogout } from '../../services/userService';
+import { User, userLogout } from '../../services/userService';
 import { getStorageInfo } from '../../services/fileService';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,7 +15,7 @@ type SessionChanged = {
 type AuthContextType = {
     isAuthenticated: boolean;
     user: User | null;
-    login: (ack: LoginAck) => void;
+    login: (ack: User) => void;
     logout: () => void;
     checkAuth: () => Promise<boolean>;
 };
@@ -73,19 +73,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // 冷启动时验证token
     useEffect(() => {
-        checkAuth();
+        // 检查本地是否有用户数据
+        const userData = localStorage.getItem('userData');
+        if (userData) {
+            // 只有当有用户数据时才调用checkAuth
+            checkAuth();
+        } else {
+            // 没有用户数据时直接跳转到登录页面
+            navigate("/login");
+        }
     }, []);
 
     useEffect(() => {
         if (isAuthenticated) {
             navigate("/files")
-        } else {
-            navigate("/login")
         }
     }, [isAuthenticated])
-    const login = (ack: LoginAck) => {
-        localStorage.setItem('userData', JSON.stringify(ack.user));
-        setUser(ack.user);
+    const login = (user: User) => {
+        localStorage.setItem('userData', JSON.stringify(user));
+        setUser(user);
         setIsAuthenticated(true);
     };
 

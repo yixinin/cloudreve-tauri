@@ -16,6 +16,7 @@ import {
 } from "@mui/icons-material";
 import { User, userLogout } from "../../services/userService";
 import { useAuth } from "../contexts/AuthContext";
+import { Settings as SettingsIcon } from '@mui/icons-material';
 
 const UserMenu = () => {
     const [anchorEl, setAnchorEl] = useState(null);
@@ -111,7 +112,15 @@ const UserMenu = () => {
 
                 <Divider sx={{ my: 1 }} />
 
-                {/* 2. 个人主页 */}
+                {/* 2. 设置 */}
+                <MenuItem onClick={handleSettings}>
+                    <ListItemIcon>
+                        <SettingsIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="设置" />
+                </MenuItem>
+
+                {/* 3. 个人主页 */}
                 <MenuItem onClick={handleClose}>
                     <ListItemIcon>
                         <HomeIcon fontSize="small" />
@@ -132,3 +141,9 @@ const UserMenu = () => {
 };
 
 export default UserMenu;
+import { useNavigate } from 'react-router-dom';
+
+const handleSettings = () => {
+    const navigate = useNavigate();
+    navigate('/settings');
+};

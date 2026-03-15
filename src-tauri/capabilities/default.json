@@ -8,7 +8,9 @@
   "platforms": [
     "iOS",
     "android",
-    "windows"
+    "windows",
+    "macOS",
+    "linux"
   ],
   "permissions": [
     "core:default",
@@ -17,6 +19,8 @@
     "fs:scope-desktop",
     "store:default",
     "app-events:default",
-    "fs:default"
+    "fs:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen"
   ]
 }

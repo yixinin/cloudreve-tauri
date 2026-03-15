@@ -6,5 +6,4 @@ fn get_json() -> &str {
 fn test_decode() {
     let s = get_json();
     let res = serde_json::from_str::<Ack<GetSharesAck>>(s);
-    println!("{:?}", res);
 }

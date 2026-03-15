@@ -124,8 +124,8 @@ export const getURL = async (uri: string) => {
 
 export const getThumbURL = async (uri: string) => {
     try {
-        const response = await invoke<string>('get_thumb_url', { uri });
-        return response;
+        const imageUrl = await invoke<string>('get_thumb_url', { uri });
+        return imageUrl;
     } catch (error) {
         console.error('Failed to get file thumb url:', error);
         throw error;

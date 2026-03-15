@@ -182,19 +182,26 @@ const ShareListPage: React.FC = () => {
                                 size={{ xs: 12, sm: 6, md: 4, lg: 3 }}
                                 key={share.id}
                                 sx={{
-
+                                    width: '100%'
                                 }}>
-                                <StyledCard onContextMenu={(event: any) => { onFileRightClick(event, share) }} onClick={() => handleOpenShare(share.url)}>
+                                <StyledCard
+                                    onContextMenu={(event: any) => { onFileRightClick(event, share) }}
+                                    onClick={() => handleOpenShare(share.url)}
+                                    sx={{
+                                        width: '100%'
+                                    }}
+                                >
                                     <CardContent sx={{
-
+                                        width: '100%'
                                     }}>
                                         <Box sx={{
                                             display: 'flex',
                                             justifyContent: "start",
                                             alignItems: 'center',
+                                            padding: '0px 30px 0px 0px'
                                         }}>
                                             <Box sx={{
-                                                marginLeft: "8px"
+                                                padding: '0px 5px'
                                             }}>
                                                 {getFileIcon(share.source_type, share.name)}
                                             </Box>
@@ -202,7 +209,9 @@ const ShareListPage: React.FC = () => {
 
                                             <Stack sx={{
                                                 width: '100%',
-                                                marginLeft: "10px"
+                                                // marginLeft: "10px",
+                                                padding: 0.5,
+                                                // border: 1
                                             }}>
                                                 <Box sx={{
                                                     display: 'flex',
@@ -214,16 +223,14 @@ const ShareListPage: React.FC = () => {
                                                     padding: 0,
                                                 }}>
                                                     <Typography
-                                                        variant="h6"
-                                                        component="div"
+                                                        variant="body2"
                                                         noWrap
                                                         fontSize={16}
                                                         sx={{
-                                                            flex: '1 1 auto',
-                                                            minWidth: 0,
                                                             textOverflow: 'ellipsis',
                                                             overflow: 'hidden',
                                                             whiteSpace: 'nowrap',
+                                                            display: 'inline-block',
                                                         }}
                                                     >
                                                         {share.name}
@@ -246,7 +253,6 @@ const ShareListPage: React.FC = () => {
                                                     alignItems: 'center',
                                                     width: '100%',
                                                     overflow: 'hidden',
-                                                    gap: 1,
                                                     padding: 0,
                                                 }}>
                                                     <Typography
@@ -254,8 +260,7 @@ const ShareListPage: React.FC = () => {
                                                         variant="body2"
                                                         color="text.secondary"
                                                         sx={{
-                                                            flex: '1 1 auto',
-                                                            minWidth: 0,
+                                                            width: "fit-content",
                                                             textOverflow: 'ellipsis',
                                                             overflow: 'hidden',
                                                             whiteSpace: 'nowrap',
@@ -265,10 +270,9 @@ const ShareListPage: React.FC = () => {
                                                     </Typography>
 
                                                     <Box sx={{
-                                                        flex: '0 0 auto',
                                                         display: 'flex',
-                                                        justifyContent: 'end',
-                                                        alignItems: 'center'
+                                                        justifyContent: 'center',
+                                                        alignItems: 'center',
                                                     }}>
                                                         <Visibility htmlColor='gray' sx={{ scale: '0.7' }} ></Visibility>
                                                         <Typography fontSize={12}>{share.visited}</Typography>
